@@ -1,12 +1,15 @@
 services:
+  # Puertos altos: rootless podman no puede bind 80/443 sin ajustes.
+  # Para puertos privilegiados: corre rootful (`sudo podman compose up`) o
+  # baja el límite (sysctl net.ipv4.ip_unprivileged_port_start=80).
   gateway:
     build:
       context: ..
       dockerfile: apps/gateway/Dockerfile
     ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
+      - '8080:80'
+      - '8443:443'
+      - '8443:443/udp'
     environment:
       # Para un dominio real, ej: PORTAL_HOST=portal.empresa.com
       # y ajusta también APPS_URL_TEMPLATE/COOKIE_DOMAIN en el servicio api.
@@ -34,8 +37,8 @@ services:
       # Cookie válida para portal y subdominios de apps (mismo dominio base requerido)
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.localhost}
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
-      # {slug} se reemplaza por el slug de cada app
-      APPS_URL_TEMPLATE: https://{slug}.apps.localhost
+      # {slug} se reemplaza por el slug de cada app. Incluye el puerto externo del gateway.
+      APPS_URL_TEMPLATE: https://{slug}.apps.localhost:8443
     volumes:
       - bundles:/srv/bundles
     depends_on:
@@ -49,7 +52,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16-alpine
     environment:
       POSTGRES_USER: vch
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vch-cambia}

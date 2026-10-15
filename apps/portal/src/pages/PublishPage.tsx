@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, type AppInfo, type PublishOutcome } from '../api';
-import { ApiError } from '../api';
+import { api, ApiError, type AppInfo, type PublishOutcome } from '../api';
 import { FindingsTable } from '../components/Findings';
 import { useAuth } from '../App';
 

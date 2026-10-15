@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM docker.io/library/node:24-alpine AS build
 RUN corepack enable
 WORKDIR /repo
 
@@ -14,9 +14,9 @@ COPY apps/api ./apps/api
 RUN pnpm --filter @vch/shared build \
     && pnpm --filter @vch/scanner build \
     && pnpm --filter api build \
-    && pnpm --filter api deploy --prod /out
+    && pnpm --filter api deploy --prod --legacy /out
 
-FROM node:24-alpine
+FROM docker.io/library/node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /out ./

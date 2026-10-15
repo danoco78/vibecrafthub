@@ -6,7 +6,7 @@ Plataforma self-hosted para que los empleados de una empresa publiquen aplicacio
 - Todo bundle pasa por un **pipeline de revisión** (estructura, reglas de seguridad, política de severidades) antes de publicarse. Un rechazo entrega un reporte detallado con archivo, línea y corrección sugerida.
 - **Historial completo e inmutable** de cada intento de publicación, exitoso o rechazado.
 - Apps en **subdominio aislado** con CSP estricta y sesión obligatoria: la app nunca puede invocar la API de la plataforma.
-- Despliegue con **un solo `docker compose up`** en una VM on-premise.
+- Despliegue con **un solo `podman compose up`** en una VM on-premise (docker compose también funciona).
 
 ## Arquitectura
 
@@ -57,18 +57,24 @@ Abre http://localhost:5173. El **primer usuario registrado es admin**. Desde Adm
 | `COOKIE_SECURE` | `0` | `1` para HTTPS |
 | `APPS_URL_TEMPLATE` | `http://localhost:3000/bundles/{slug}/` | Plantilla de URL pública de las apps |
 
-## Despliegue en producción
+## Despliegue en producción (podman)
+
+Requisitos: podman 5+ y `podman-compose` (o docker-compose, el wrapper `podman compose` usa cualquiera de los dos).
 
 ```bash
 cd infra
-docker compose up -d --build
+podman compose up -d --build
+# equivalente: podman-compose up -d --build
 ```
 
 Servicios: `gateway` (Caddy, únicos puertos expuestos), `api`, `postgres`.
 
-1. Abre https://localhost y acepta el certificado de la CA interna de Caddy (o instala tu propia CA).
-2. Registra el admin, crea usuarios, publica apps.
-3. Requisito de red para dominio real: DNS interno con wildcard `*.apps.empresa.com` apuntando a la VM.
+- **Rootless**: el gateway publica en **8080 (HTTP) y 8443 (HTTPS)** porque un usuario sin privilegios no puede bind 80/443. Abre https://localhost:8443. Para puertos estándar: corre rootful (`sudo podman compose up -d --build`) o baja `net.ipv4.ip_unprivileged_port_start=80`.
+- Las imágenes base están **totalmente calificadas** (`docker.io/library/...`): podman no resuelve shortnames sin interacción.
+- Los datos viven en volúmenes nombrados de podman (`podman volume ls`): bundles, pgdata, certs de Caddy.
+- Acepta el certificado de la CA interna de Caddy la primera vez (o instala tu propia CA).
+- Registra el admin, crea usuarios, publica apps.
+- Requisito de red para dominio real: DNS interno con wildcard `*.apps.empresa.com` apuntando a la VM.
 
 ### Dominio real (empresa.com)
 
@@ -93,6 +99,27 @@ Requisito: portal y apps deben compartir **dominio base** (mismo sitio registrab
 | `APPS_WILDCARD` | `*.apps.localhost` | Wildcard de las apps |
 | `COOKIE_DOMAIN` | `.localhost` | Domain de la cookie de sesión |
 | `COOKIE_SECURE` | `1` | `0` solo si sirves por HTTP plano en LAN |
+
+> Si mapeas el gateway a 80/443 reales, quita el puerto `:8443` de `APPS_URL_TEMPLATE` en `infra/docker-compose.yml` y ajusta `PORTAL_HOST`.
+
+### Topología local: `*.apps.localhost` y la cookie
+
+`localhost` figura en la Public Suffix List: curl y navegadores estrictos convierten `Domain=.localhost` en cookie **de host único**, así que la sesión no llega a los subdominios `*.apps.localhost` (el gateway responde 401 por `forward_auth`). El portal sí funciona; solo falla el acceso a las apps por subdominio.
+
+Para probar el aislamiento completo en local usa un dominio que no esté en la PSL:
+
+1. Entradas en `/etc/hosts` (o dnsmasq con `address=/.apps.vch.local/127.0.0.1`):
+
+   ```
+   127.0.0.1 portal.vch.local
+   127.0.0.1 miapp.apps.vch.local   # una por app, o dnsmasq wildcard
+   ```
+
+2. En `infra/docker-compose.yml`: `PORTAL_HOST=portal.vch.local`, `APPS_WILDCARD=*.apps.vch.local`, `COOKIE_DOMAIN=.vch.local`, `APPS_URL_TEMPLATE=https://{slug}.apps.vch.local:8443`.
+
+3. Acepta/instala la CA interna de Caddy en el navegador.
+
+Con un dominio real (`empresa.com`) no aplica: no está en la PSL y `Domain=.empresa.com` cubre portal y apps sin pasos extra.
 
 ## Formato del bundle
 
