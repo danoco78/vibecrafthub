@@ -1,0 +1,70 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: apps/gateway/Dockerfile
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      # Para un dominio real, ej: PORTAL_HOST=portal.empresa.com
+      # y ajusta también APPS_URL_TEMPLATE/COOKIE_DOMAIN en el servicio api.
+      PORTAL_HOST: ${PORTAL_HOST:-localhost}
+      APPS_WILDCARD: ${APPS_WILDCARD:-*.apps.localhost}
+      # {labels.2} corresponde a *.apps.localhost. Con dominio real (*.apps.empresa.com) usa labels.3.
+      APPS_ROOT_TEMPLATE: /srv/bundles/{labels.2}/active
+    volumes:
+      - bundles:/srv/bundles
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://vch:${POSTGRES_PASSWORD:-vch-cambia}@postgres:5432/vch
+      BUNDLES_DIR: /srv/bundles
+      PORT: '3000'
+      # Cookie válida para portal y subdominios de apps (mismo dominio base requerido)
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.localhost}
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
+      # {slug} se reemplaza por el slug de cada app
+      APPS_URL_TEMPLATE: https://{slug}.apps.localhost
+    volumes:
+      - bundles:/srv/bundles
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vch-cambia}
+      POSTGRES_DB: vch
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vch -d vch']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  bundles:
+  pgdata:
+  caddy_data:
+  caddy_config:

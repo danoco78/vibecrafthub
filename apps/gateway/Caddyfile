@@ -1,0 +1,42 @@
+{
+	# CA interna para TLS en dominios locales (*.apps.localhost, etc.)
+	local_certs
+}
+
+# Portal + API
+{$PORTAL_HOST:localhost} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		root * /srv/portal
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Apps publicadas: subdominio por app.
+# - forward_auth: exige sesión válida antes de servir cualquier asset.
+# - CSP estricta: la app solo puede cargarse a sí misma; el API le queda fuera de origen.
+# - APPS_ROOT_TEMPLATE: {labels.N} depende de la profundidad del wildcard:
+#     *.apps.localhost      → labels.2
+#     *.apps.empresa.com    → labels.3
+{$APPS_WILDCARD:*.apps.localhost} {
+	tls internal
+
+	forward_auth api:3000 {
+		uri /api/auth/check
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors {$PORTAL_HOST:localhost}"
+	}
+
+	root * {$APPS_ROOT_TEMPLATE:/srv/bundles/active}
+	file_server
+}
