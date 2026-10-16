@@ -143,6 +143,14 @@ export default function PublishPage() {
           )}
           <h2>Hallazgos ({outcome.findings.length})</h2>
           <FindingsTable findings={outcome.findings} />
+          {outcome.meta?.llm && (
+            <p className="muted">
+              Revisión LLM ({outcome.meta.llm.provider} · {outcome.meta.llm.model}):{' '}
+              {outcome.meta.llm.reviewed} archivo(s) analizados
+              {outcome.meta.llm.cached > 0 && `, ${outcome.meta.llm.cached} desde caché`}
+              {!outcome.meta.llm.available && ' · LLM no disponible durante esta publicación'}
+            </p>
+          )}
           {outcome.verdict === 'published' && selectedApp && (
             <p>
               URL de la app:{' '}

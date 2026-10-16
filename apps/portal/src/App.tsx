@@ -42,8 +42,12 @@ function Layout({ children }: { children: ReactNode }) {
           <button
             className="secondary"
             onClick={async () => {
-              await logout();
-              navigate('/login');
+              // navigate siempre: si el logout falla por red, el usuario no se queda trabado
+              try {
+                await logout();
+              } finally {
+                navigate('/login');
+              }
             }}
           >
             Salir

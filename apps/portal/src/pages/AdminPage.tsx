@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type User } from '../api';
+import { api, type LlmConfigView, type User } from '../api';
 
 interface Policy {
   blockSeverities: string[];
@@ -17,6 +17,8 @@ const SEVERITIES = [
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [llm, setLlm] = useState<LlmConfigView | null>(null);
+  const [llmApiKey, setLlmApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -32,6 +34,10 @@ export default function AdminPage() {
     api
       .policy()
       .then((r) => setPolicy(r.policy))
+      .catch(() => undefined);
+    api
+      .llmConfig()
+      .then((r) => setLlm(r.config))
       .catch(() => undefined);
   }
   useEffect(load, []);
@@ -64,6 +70,27 @@ export default function AdminPage() {
     }
   }
 
+  async function saveLlm() {
+    if (!llm) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.updateLlmConfig({
+        enabled: llm.enabled,
+        provider: llm.provider,
+        baseUrl: llm.baseUrl === defaultBaseUrl(llm.provider) ? '' : llm.baseUrl,
+        model: llm.model,
+        apiKey: llmApiKey || undefined,
+        onUnavailable: llm.onUnavailable,
+      });
+      setLlm(res.config);
+      setLlmApiKey('');
+      setNotice('Configuración LLM guardada.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
   function toggleSeverity(value: string) {
     if (!policy) return;
     const has = policy.blockSeverities.includes(value);
@@ -73,6 +100,10 @@ export default function AdminPage() {
         ? policy.blockSeverities.filter((s) => s !== value)
         : [...policy.blockSeverities, value],
     });
+  }
+
+  function defaultBaseUrl(provider: LlmConfigView['provider']): string {
+    return provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1';
   }
 
   return (
@@ -186,6 +217,100 @@ export default function AdminPage() {
               Guardar política
             </button>
           </div>
+        </div>
+      )}
+
+      <h2>Revisión de código con LLM</h2>
+      <p className="muted">
+        Cuando está activa, cada publicación pasa además una revisión semántica (XSS, secretos, código
+        ofuscado, exfiltración) por un modelo de lenguaje. Compatible con APIs estilo OpenAI (incluye
+        Ollama, llama.cpp, vLLM locales) y Anthropic.
+      </p>
+      {llm && (
+        <div className="card">
+          <div className="inline" style={{ marginBottom: 16 }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--text)' }}>
+              <input
+                type="checkbox"
+                style={{ width: 'auto' }}
+                checked={llm.enabled}
+                onChange={(e) => setLlm({ ...llm, enabled: e.target.checked })}
+              />
+              Revisión LLM activada
+            </label>
+            {llm.apiKeyMasked && (
+              <span className="muted">
+                Clave actual: <span className="mono">{llm.apiKeyMasked}</span>
+              </span>
+            )}
+          </div>
+          <div className="inline" style={{ marginBottom: 16 }}>
+            <div style={{ minWidth: 180 }}>
+              <label htmlFor="l-provider">Proveedor</label>
+              <select
+                id="l-provider"
+                value={llm.provider}
+                onChange={(e) => {
+                  const provider = e.target.value as LlmConfigView['provider'];
+                  setLlm({ ...llm, provider, baseUrl: defaultBaseUrl(provider) });
+                }}
+              >
+                <option value="openai">OpenAI-compatible</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+            </div>
+            <div style={{ flex: 2, minWidth: 260 }}>
+              <label htmlFor="l-url">URL base (vacía = oficial del proveedor)</label>
+              <input
+                id="l-url"
+                value={llm.baseUrl}
+                onChange={(e) => setLlm({ ...llm, baseUrl: e.target.value })}
+                placeholder={defaultBaseUrl(llm.provider)}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <label htmlFor="l-model">Modelo</label>
+              <input
+                id="l-model"
+                value={llm.model}
+                onChange={(e) => setLlm({ ...llm, model: e.target.value })}
+                placeholder="gpt-4o-mini / claude-… / qwen3:8b"
+              />
+            </div>
+          </div>
+          <div className="inline" style={{ marginBottom: 16 }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <label htmlFor="l-key">API key {llm.apiKeyMasked && '(dejar vacío para conservar)'}</label>
+              <input
+                id="l-key"
+                type="password"
+                value={llmApiKey}
+                onChange={(e) => setLlmApiKey(e.target.value)}
+                placeholder={llm.apiKeyMasked || 'sk-…'}
+                autoComplete="off"
+              />
+            </div>
+            <div style={{ minWidth: 280 }}>
+              <label htmlFor="l-unavail">Cuando el LLM no responde</label>
+              <select
+                id="l-unavail"
+                value={llm.onUnavailable}
+                onChange={(e) => setLlm({ ...llm, onUnavailable: e.target.value as LlmConfigView['onUnavailable'] })}
+              >
+                <option value="continue">Continuar con advertencia</option>
+                <option value="block">Bloquear la publicación</option>
+              </select>
+            </div>
+          </div>
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Los hallazgos del LLM usan las mismas severidades y la misma política de bloqueo que las reglas
+            estáticas. Archivos sin cambios entre versiones no se re-analizan (caché por hash). Para un LLM
+            local en el host, usa <span className="mono">http://host.containers.internal:puerto</span> como URL
+            base (podman) y déjala accesible desde el contenedor del API.
+          </p>
+          <button type="button" onClick={saveLlm}>
+            Guardar revisión LLM
+          </button>
         </div>
       )}
     </div>

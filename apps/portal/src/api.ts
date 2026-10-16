@@ -39,6 +39,25 @@ export interface PublishOutcome {
   version?: string;
   findings: Finding[];
   summary: Record<string, number>;
+  meta?: {
+    llm?: {
+      provider: string;
+      model: string;
+      reviewed: number;
+      cached: number;
+      skipped: number;
+      available: boolean;
+    };
+  };
+}
+
+export interface LlmConfigView {
+  enabled: boolean;
+  provider: 'openai' | 'anthropic';
+  baseUrl: string;
+  model: string;
+  apiKeyMasked: string;
+  onUnavailable: 'continue' | 'block';
 }
 
 export interface Attempt {
@@ -67,7 +86,13 @@ export class ApiError extends Error {
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers: opts.body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
+    // Sin cuerpo no va Content-Type: un POST con JSON vacío es rechazado por Fastify con 400
+    headers:
+      opts.body instanceof FormData
+        ? undefined
+        : opts.body !== undefined
+          ? { 'Content-Type': 'application/json' }
+          : undefined,
     ...opts,
   });
   let body: unknown = null;
@@ -127,5 +152,19 @@ export const api = {
     request<{ policy: { blockSeverities: string[]; maxBundleMb: number; maxFiles: number } }>('/api/policy', {
       method: 'PUT',
       body: JSON.stringify(policy),
+    }),
+
+  llmConfig: () => request<{ config: LlmConfigView }>('/api/llm-config'),
+  updateLlmConfig: (c: {
+    enabled: boolean;
+    provider: string;
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    onUnavailable: string;
+  }) =>
+    request<{ config: LlmConfigView }>('/api/llm-config', {
+      method: 'PUT',
+      body: JSON.stringify(c),
     }),
 };

@@ -4,9 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import yauzl from 'yauzl';
 import { type BundleEntry, scanBundle, verdictFromFindings } from '@vch/scanner';
-import { APP_MANIFEST_FILENAME, countBySeverity, type Finding, type Policy } from '@vch/shared';
+import { APP_MANIFEST_FILENAME, blocksPublish, countBySeverity, type Finding, type Policy } from '@vch/shared';
 import type { DbClient } from '../db.js';
 import { extractBundle, setActiveVersion } from './storage.js';
+import { loadLlmConfig, reviewBundleWithLlm } from '../llm.js';
 
 interface AppRow {
   id: number;
@@ -20,6 +21,7 @@ export interface PublishOutcome {
   version?: string;
   findings: Finding[];
   summary: Record<string, number>;
+  meta?: Record<string, unknown>;
 }
 
 function openZip(buffer: Buffer): Promise<yauzl.ZipFile> {
@@ -188,10 +190,20 @@ export async function publishBundle(
     }
   }
 
+  // --- Etapa 3: revisión semántica con LLM (configurable por el admin) ---
+  // Solo corre si las reglas estáticas aún no rechazan: ahorra tokens en bundles ya bloqueados.
+  let llmMeta: Record<string, unknown> | undefined;
+  const llmCfg = await loadLlmConfig(db);
+  if (llmCfg.enabled && llmCfg.model && !findings.some((f) => blocksPublish(policy, f.severity))) {
+    const review = await reviewBundleWithLlm(db, entries, llmCfg);
+    findings.push(...review.findings);
+    llmMeta = { llm: review.meta };
+  }
+
   const verdict = verdictFromFindings(findings, policy);
 
   if (verdict === 'rejected' || !manifest) {
-    return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash);
+    return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash, llmMeta);
   }
 
   // --- Publicar: extracción inmutable + versión + symlink activo ---
@@ -215,7 +227,7 @@ export async function publishBundle(
   }
   await db.query('UPDATE apps SET current_version_id = $1 WHERE id = $2', [versionId, app.id]);
 
-  return persistAttempt(db, app.id, userId, versionId, 'published', findings, bundleHash, version);
+  return persistAttempt(db, app.id, userId, versionId, 'published', findings, bundleHash, llmMeta, version);
 }
 
 export async function persistAttempt(
@@ -226,12 +238,13 @@ export async function persistAttempt(
   verdict: 'published' | 'rejected',
   findings: Finding[],
   bundleHash: string,
+  meta?: Record<string, unknown>,
   version?: string,
 ): Promise<PublishOutcome> {
   const res = await db.query<{ id: number }>(
-    `INSERT INTO publish_attempts (app_id, user_id, version_id, verdict, findings, bundle_hash)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6) RETURNING id`,
-    [appId, userId, versionId, verdict, JSON.stringify(findings), bundleHash],
+    `INSERT INTO publish_attempts (app_id, user_id, version_id, verdict, findings, bundle_hash, meta)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb) RETURNING id`,
+    [appId, userId, versionId, verdict, JSON.stringify(findings), bundleHash, JSON.stringify(meta ?? {})],
   );
   return {
     verdict,
@@ -239,6 +252,7 @@ export async function persistAttempt(
     version,
     findings,
     summary: countBySeverity(findings),
+    meta,
   };
 }
 

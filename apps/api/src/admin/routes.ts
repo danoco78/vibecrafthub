@@ -4,6 +4,7 @@ import type { DbClient } from '../db.js';
 import { requireRole } from '../plugins/auth.js';
 import { hashPassword, validatePasswordStrength } from '../auth/passwords.js';
 import { policySchema, type Policy } from '@vch/shared';
+import { DEFAULT_LLM_BASE_URL, loadLlmConfig, maskApiKey } from '../llm.js';
 
 const ROLES = ['admin', 'developer', 'user'] as const;
 type Role = (typeof ROLES)[number];
@@ -13,6 +14,26 @@ const createUserSchema = z.object({
   password: z.string().min(8).max(128),
   role: z.enum(ROLES),
 });
+
+const llmConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    provider: z.enum(['openai', 'anthropic']),
+    /** Vacío = usa la URL por defecto del proveedor (útil para locales con URL propia) */
+    baseUrl: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => v === '' || /^https?:\/\//.test(v), 'baseUrl debe iniciar con http:// o https://'),
+    model: z.string().trim().max(120),
+    /** Vacío/ausente = conserva la clave existente */
+    apiKey: z.string().max(400).optional(),
+    onUnavailable: z.enum(['continue', 'block']),
+  })
+  .refine((c) => !c.enabled || c.model !== '', {
+    message: 'El nombre del modelo es obligatorio cuando la revisión LLM está activa.',
+    path: ['model'],
+  });
 
 export function adminRoutes(app: FastifyInstance, db: DbClient): void {
   const requireAdmin = requireRole(app, 'admin');
@@ -75,5 +96,49 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
       p.maxFiles,
     ]);
     return { policy: p };
+  });
+
+  // ---------- revisión LLM ----------
+  app.get('/api/llm-config', { preHandler: requireAdmin }, async () => {
+    const cfg = await loadLlmConfig(db);
+    return {
+      config: {
+        enabled: cfg.enabled,
+        provider: cfg.provider,
+        baseUrl: cfg.baseUrl,
+        model: cfg.model,
+        apiKeyMasked: maskApiKey(cfg.apiKey),
+        onUnavailable: cfg.onUnavailable,
+      },
+    };
+  });
+
+  app.put('/api/llm-config', { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = llmConfigSchema.safeParse(request.body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+      return reply.code(400).send({ error: `Configuración LLM inválida: ${detail}` });
+    }
+    const data = parsed.data;
+    const existing = await loadLlmConfig(db);
+    // Clave vacía = conservar la actual (no se re-expone en el portal)
+    const apiKey = data.apiKey && data.apiKey.length > 0 ? data.apiKey : existing.apiKey;
+    const baseUrl = data.baseUrl || DEFAULT_LLM_BASE_URL[data.provider];
+    await db.query(
+      `UPDATE llm_config
+       SET enabled = $1, provider = $2, base_url = $3, model = $4, api_key = $5, on_unavailable = $6, updated_at = now()
+       WHERE id = 1`,
+      [data.enabled, data.provider, baseUrl, data.model, apiKey, data.onUnavailable],
+    );
+    return {
+      config: {
+        enabled: data.enabled,
+        provider: data.provider,
+        baseUrl,
+        model: data.model,
+        apiKeyMasked: maskApiKey(apiKey),
+        onUnavailable: data.onUnavailable,
+      },
+    };
   });
 }
