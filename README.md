@@ -57,7 +57,32 @@ Abre http://localhost:5173. El **primer usuario registrado es admin**. Desde Adm
 | `COOKIE_SECURE` | `0` | `1` para HTTPS |
 | `APPS_URL_TEMPLATE` | `http://localhost:3000/bundles/{slug}/` | Plantilla de URL pública de las apps |
 
-## Despliegue en producción (podman)
+## Operación local (no perder datos)
+
+Los datos viven en **volúmenes nombrados** de podman (`vibecrafthub_pgdata`, `vibecrafthub_bundles`, …). Sobreviven a paradas, reinicios y `down`. El compose fija `name: vibecrafthub`, así que el proyecto y sus volúmenes son siempre los mismos aunque cambies de directorio o uses `podman compose` / `podman-compose`.
+
+```bash
+cd infra
+podman compose up -d          # arrancar (primera vez: agrega --build)
+podman compose stop           # parar: conserva contenedores y datos
+podman compose start          # volver a arrancar lo parado
+podman compose down           # elimina contenedores, CONSERVA volúmenes (los datos)
+podman compose logs -f api    # ver logs
+```
+
+**No uses `down -v` ni `podman volume prune`**: eso sí borra los volúmenes con usuarios, apps y publicaciones.
+
+Backup de todo (con el stack parado o en marcha):
+
+```bash
+podman volume export vibecrafthub_pgdata  -o backup-pgdata.tar
+podman volume export vibecrafthub_bundles -o backup-bundles.tar
+# restaurar: podman volume import <volumen> backup.tar
+```
+
+Si algún día arranca con otro nombre de proyecto (contenedores `algo_postgres_1` en vez de `vibecrafthub_postgres_1`), es que usaste otra carpeta o `-p` distinto: para el stack (`podman-compose -p <nombre> down`) y arranca con el compose fijado — tus datos siguen en `vibecrafthub_*`.
+
+## Operación en producción (podman)
 
 Requisitos: podman 5+ y `podman-compose` (o docker-compose, el wrapper `podman compose` usa cualquiera de los dos).
 

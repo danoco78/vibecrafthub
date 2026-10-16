@@ -1,3 +1,7 @@
+# Nombre de proyecto fijo: garantiza que SIEMPRE se usen los mismos volúmenes
+# (pgdata, bundles) sin importar el directorio o el comando de arranque.
+name: vibecrafthub
+
 services:
   # Puertos altos: rootless podman no puede bind 80/443 sin ajustes.
   # Para puertos privilegiados: corre rootful (`sudo podman compose up`) o
