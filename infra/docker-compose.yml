@@ -17,10 +17,10 @@ services:
     environment:
       # Para un dominio real, ej: PORTAL_HOST=portal.empresa.com
       # y ajusta también APPS_URL_TEMPLATE/COOKIE_DOMAIN en el servicio api.
-      PORTAL_HOST: ${PORTAL_HOST:-localhost}
-      APPS_WILDCARD: ${APPS_WILDCARD:-*.apps.localhost}
-      # {labels.2} corresponde a *.apps.localhost. Con dominio real (*.apps.empresa.com) usa labels.3.
-      APPS_ROOT_TEMPLATE: /srv/bundles/{labels.2}/active
+      PORTAL_HOST: ${PORTAL_HOST:-portal.vch.local}
+      APPS_WILDCARD: ${APPS_WILDCARD:-*.apps.vch.local}
+      # {labels.3} = slug en slug.apps.vch.local. Con *.apps.localhost sería labels.2.
+      APPS_ROOT_TEMPLATE: /srv/bundles/{labels.3}/active
     volumes:
       - bundles:/srv/bundles
       - caddy_data:/data
@@ -39,10 +39,10 @@ services:
       BUNDLES_DIR: /srv/bundles
       PORT: '3000'
       # Cookie válida para portal y subdominios de apps (mismo dominio base requerido)
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.localhost}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.vch.local}
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
       # {slug} se reemplaza por el slug de cada app. Incluye el puerto externo del gateway.
-      APPS_URL_TEMPLATE: https://{slug}.apps.localhost:8443
+      APPS_URL_TEMPLATE: https://{slug}.apps.vch.local:8443
     volumes:
       - bundles:/srv/bundles
     depends_on:
