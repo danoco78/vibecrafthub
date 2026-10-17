@@ -27,6 +27,7 @@ VibeCraftHub channels that energy down a controlled path: an internal catalog wh
 - 🗂️ **Internal catalog** — apps are served from isolated subdomains with TLS, strict CSP, and mandatory session: a published app cannot call the platform API (only its own `/db/` namespace).
 - 🧾 **Full audit trail** — every publish attempt (successful or rejected) is immutably recorded, with findings, LLM provider, model, and cache stats; admin actions on databases too.
 - 👥 **Lightweight administration** — local users with roles, activation/deactivation, password resets, configurable blocking-severity policy and gateway limits.
+- 🪄 **AI assistant** — a short form in "My apps" generates the exact prompt to hand any AI the app the employee imagines, with the platform's rules already baked in.
 - 🐳 **One command** — `podman compose up -d --build` on a single VM: gateway, API, and database.
 
 ## Architecture

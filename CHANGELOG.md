@@ -16,6 +16,7 @@ Data gateway (BD SQLite por app) y apps privadas con allowlist. Diseño de refer
 - **Rate limit de `/db/query`** por app+usuario con error tipado `VCH_DB_RATE_LIMITED`.
 - **Errores tipados estables** (`VCH_DB_*`) expuestos por el SDK.
 - **Apps privadas con allowlist**: visibilidad `pública`/`privada` por app (nacen públicas); allowlist de usuarios individuales gestionada por owner/admin desde el portal.
+- **Asistente «¿Cómo crear mis apps?»**: formulario corto en Mis apps que genera un prompt listo para pegar en cualquier IA, con todas las restricciones de la plataforma ya incorporadas (formato del bundle, reglas del pipeline, SDK del data gateway). El empleado no necesita saber nada técnico.
 - **Enforcement en dos capas**: el catálogo solo lista lo visible para cada usuario; el `forward_auth` de Caddy rechaza el subdominio de apps privadas con página 403 amigable (assets y `/db/` por igual).
 - **Administración de BDs**: vista de uso por app, descarga de copia consistente (checkpoint al cerrar) y reset con confirmación; ambas acciones en el nuevo log `admin_actions`.
 - **Ciclo de vida**: la BD persiste entre versiones de la app; eliminar la app elimina su BD y su allowlist; desactivar versiones no toca los datos.

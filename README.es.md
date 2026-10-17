@@ -28,6 +28,7 @@ VibeCraftHub canaliza esa energía por un camino controlado: un catálogo intern
 - 🗂️ **Catálogo interno** — las apps se sirven en subdominios aislados con TLS, CSP estricta y sesión obligatoria: una app publicada no puede invocar la API de la plataforma (solo su propio namespace `/db/`).
 - 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché; las acciones de admin sobre BDs también.
 - 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueante y límites del gateway configurables.
+- 🪄 **Asistente para IA** — un formulario en «Mis apps» genera el prompt exacto para pedirle a cualquier IA la app que el empleado imagina, con las reglas de la plataforma ya integradas.
 - 🐳 **Un solo comando** — `podman compose up -d --build` en una VM: gateway, API y base de datos.
 
 ## Arquitectura

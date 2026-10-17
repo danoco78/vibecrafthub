@@ -129,3 +129,16 @@ tr:hover td { background: var(--panel-2); }
   width: 100%; height: 560px; border: 1px solid var(--border);
   border-radius: var(--radius); background: #fff;
 }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(6, 10, 18, 0.72);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; z-index: 100; overflow-y: auto;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  width: 100%; max-width: 760px;
+}
+.modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.modal .field { margin-top: 14px; }
