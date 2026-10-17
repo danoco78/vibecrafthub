@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { DbClient } from '../db.js';
 import { requireRole } from '../plugins/auth.js';
+import { canAccessApp, loadAppBySlug, slugFromHost } from '../apps/access.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwords.js';
 import {
   COOKIE_OPTS_KEY,
@@ -66,7 +67,16 @@ function sessionRequiredHtml(): string {
 <body><div><h1>Sesión requerida</h1><p>Inicia sesión en el portal para usar esta aplicación.</p><p><a href="${portalUrl}">Ir al portal</a></p></div></body></html>`;
 }
 
-export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: number): void {
+/** Página 403 para apps privadas: el usuario tiene sesión pero no está en la allowlist. */
+function forbiddenHtml(appName: string): string {
+  const portalUrl = process.env.PORTAL_PUBLIC_URL ?? '/';
+  const safeName = appName.replace(/[<>&]/g, '');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Acceso restringido</title>
+<style>body{font-family:system-ui,sans-serif;background:#0f1420;color:#e6eaf2;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}div{text-align:center;padding:20px}h1{font-size:20px}a{color:#4f8cff}p{color:#93a0b8}</style></head>
+<body><div><h1>Acceso restringido</h1><p>La aplicación <strong>${safeName}</strong> es privada y tu cuenta no está en su lista de acceso.</p><p>Pide al dueño de la app que te añada, o <a href="${portalUrl}">vuelve al portal</a>.</p></div></body></html>`;
+}
+
+export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: number, appsHostSuffix = '.apps.'): void {
   /**
    * Primer usuario registrado = admin. Resto se crean desde /api/admin/users.
    */
@@ -174,11 +184,20 @@ export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: n
   });
 
   /** Endpoint para Caddy forward_auth: 204 si la sesión es válida, 401 si no.
-   *  El cuerpo del 401 se copia al cliente: página amigable con enlace al portal. */
+   *  El cuerpo del 401 se copia al cliente: página amigable con enlace al portal.
+   *  v0.2: si el Host es de una app privada, además exige estar en la allowlist (403). */
   app.get('/api/auth/check', async (request, reply) => {
     if (!request.user) {
       reply.code(401).header('content-type', 'text/html; charset=utf-8');
       return sessionRequiredHtml();
+    }
+    const slug = slugFromHost(request.hostname, appsHostSuffix);
+    if (slug) {
+      const appRow = await loadAppBySlug(db, slug);
+      if (appRow && !(await canAccessApp(db, appRow, request.user))) {
+        reply.code(403).header('content-type', 'text/html; charset=utf-8');
+        return forbiddenHtml(appRow.name);
+      }
     }
     return reply.code(204).send();
   });

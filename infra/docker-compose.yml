@@ -37,16 +37,21 @@ services:
     environment:
       DATABASE_URL: postgres://vch:${POSTGRES_PASSWORD:-vch-cambia}@postgres:5432/vch
       BUNDLES_DIR: /srv/bundles
+      # BDs SQLite del data gateway: volumen propio, separado de bundles
+      DATA_DIR: /srv/appdb
       PORT: '3000'
       # Cookie válida para portal y subdominios de apps (mismo dominio base requerido)
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.vch.local}
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
+      # Resolución de app por Host en /db/* (debe calzar con APPS_WILDCARD)
+      APPS_HOST_SUFFIX: ${APPS_HOST_SUFFIX:-.apps.vch.local}
       # {slug} se reemplaza por el slug de cada app. Incluye el puerto externo del gateway.
       APPS_URL_TEMPLATE: https://{slug}.apps.vch.local:8443
       # Enlace "Ir al portal" de la página 401 que sirve el forward_auth
       PORTAL_PUBLIC_URL: https://portal.vch.local:8443
     volumes:
       - bundles:/srv/bundles
+      - appdb:/srv/appdb
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +79,7 @@ services:
 
 volumes:
   bundles:
+  appdb:
   pgdata:
   caddy_data:
   caddy_config:

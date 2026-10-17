@@ -2,11 +2,11 @@
 
 [English](README.md) | **Español**
 
-![Release](https://img.shields.io/badge/release-v0.1.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v0.2.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-56%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-87%20passing-34c98e)
 ![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
 **Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
@@ -22,10 +22,12 @@ VibeCraftHub canaliza esa energía por un camino controlado: un catálogo intern
 ## Características
 
 - 📦 **Publicación autónoma** — el empleado sube un zip con su app (html, js, css, json, xml, sqlite opcional); sin intervención de TI.
+- 🗄️ **Data gateway: BD SQLite por app** — las apps tienen persistencia real compartida entre sus usuarios vía SDK (`VCH.db`), aislada por completo entre apps, con cuota y límites configurables.
+- 🔒 **Apps privadas con allowlist** — el dueño restringe qué usuarios concretos pueden ver y usar cada app; catálogo y subdominio hacen enforcement.
 - 🔍 **Pipeline de revisión en 3 etapas** — estructura (zip-slip, extensiones, binarios disfrazados, límites), reglas estáticas con severidades y revisión semántica con LLM (OpenAI-compatible o Anthropic, cloud o local). Cada rechazo entrega un reporte con archivo, línea y corrección sugerida.
-- 🗂️ **Catálogo interno** — las apps se sirven en subdominios aislados con TLS, CSP estricta y sesión obligatoria: una app publicada no puede invocar la API de la plataforma.
-- 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché.
-- 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueantes configurable.
+- 🗂️ **Catálogo interno** — las apps se sirven en subdominios aislados con TLS, CSP estricta y sesión obligatoria: una app publicada no puede invocar la API de la plataforma (solo su propio namespace `/db/`).
+- 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché; las acciones de admin sobre BDs también.
+- 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueante y límites del gateway configurables.
 - 🐳 **Un solo comando** — `podman compose up -d --build` en una VM: gateway, API y base de datos.
 
 ## Arquitectura
@@ -53,8 +55,9 @@ flowchart LR
 
 1. **Pipeline** — nada se publica sin pasar estructura, reglas y política de severidades.
 2. **Aislamiento de red** — cada app vive en `*.apps.empresa.com`; `forward_auth` exige sesión antes de servir cualquier asset; el dominio del app no alcanza a la API.
-3. **CSP estricta** — `default-src 'self'` por app en iframe sandbox: aunque una regla pasara algo, el navegador lo bloquea en runtime.
-4. **Cifrado de credenciales** — contraseñas con Argon2id, sesiones httpOnly + Secure, API keys del LLM nunca expuestas (enmascaradas en el panel).
+3. **Aislamiento de datos** — una BD SQLite por app, resuelta por el `Host` de la request: una app jamás alcanza los datos de otra, ni siquiera con SQL.
+4. **CSP estricta** — `default-src 'self'` por app en iframe sandbox: aunque una regla pasara algo, el navegador lo bloquea en runtime.
+5. **Cifrado de credenciales** — contraseñas con Argon2id, sesiones httpOnly + Secure, API keys del LLM nunca expuestas (enmascaradas en el panel).
 
 ## Inicio rápido
 
@@ -96,7 +99,28 @@ pnpm dev:api                      # API en :3000 (PGlite embebida, sin docker)
 pnpm dev:portal                   # portal en :5173 con hot-reload
 ```
 
-Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16).
+Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway y apps privadas).
+
+## Data gateway: persistencia por app
+
+Cada app publicada tiene **su propia base de datos SQLite**, compartida entre todos sus usuarios (estado del lado del servidor, sin backend propio). El acceso va por el SDK de la plataforma, en el mismo origen de la app:
+
+```html
+<script src="/db/sdk.js"></script>
+<script>
+  // esquema: responsabilidad de la app
+  await VCH.db.run('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT, qty INTEGER)');
+  await VCH.db.run('INSERT INTO items (name, qty) VALUES (?, ?)', ['papel A4', 12]);
+
+  const { rows, truncated } = await VCH.db.all('SELECT * FROM items WHERE qty > ?', [0]);
+  const item = await VCH.db.get('SELECT * FROM items WHERE name = :n', { n: 'papel A4' });
+</script>
+```
+
+- **Allowlist de statements**: `SELECT/INSERT/UPDATE/DELETE` y DDL de tablas/índices/vistas. Bloqueados: `ATTACH`, `PRAGMA`, multi-statement.
+- **Límites configurables por el admin**: cuota por app (10 MB), timeout (5 s), filas por respuesta (1 000), queries/min por usuario (60).
+- **Ciclo de vida**: los datos persisten entre versiones de la app; eliminar la app elimina su BD; el admin puede descargar copia o hacer reset desde el panel.
+- Los errores llegan como `Error` con `.code` estable (`VCH_DB_QUOTA_EXCEEDED`, `VCH_DB_RATE_LIMITED`, …).
 
 ## Formato del bundle
 
@@ -140,7 +164,7 @@ El admin define en el panel qué severidades bloquean y qué hace el pipeline si
 ### Dominio real (empresa.com)
 
 - DNS interno con wildcard `*.apps.empresa.com` → la VM.
-- En compose: `PORTAL_HOST=portal.empresa.com`, `APPS_WILDCARD=*.apps.empresa.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.empresa.com`, y el puerto fuera de `APPS_URL_TEMPLATE`.
+- En compose: `PORTAL_HOST=portal.empresa.com`, `APPS_WILDCARD=*.apps.empresa.com`, `APPS_HOST_SUFFIX=.apps.empresa.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.empresa.com`, y el puerto fuera de `APPS_URL_TEMPLATE`.
 - Portal y apps deben compartir **dominio base** para que la cookie de sesión funcione.
 - Sustituye la CA interna de Caddy por certificados reales si lo prefieres.
 
@@ -152,8 +176,8 @@ Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://ho
 
 | Versión | Alcance | Estado |
 |---|---|---|
-| **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ esta release |
-| **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | diseño listo |
+| **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ |
+| **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | ✅ esta release |
 | **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | |
 | **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | |
 

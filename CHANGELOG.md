@@ -2,6 +2,33 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [0.2.0] - 2026-10-17
+
+Data gateway (BD SQLite por app) y apps privadas con allowlist. Diseño de referencia: `docs/design-v0.2.md`.
+
+### Added
+
+- **Data gateway — una SQLite por app**: las apps publicadas tienen persistencia real del lado del servidor, compartida entre todos sus usuarios y aislada por completo de otras apps. Archivo por app en volumen propio (`appdb`), modo WAL, creación lazy.
+- **SDK JS servido por la plataforma** (`/db/sdk.js` en el subdominio de la app, mismo origen): `VCH.db.all/get/run` con SQL parametrizado (posicionales y nombrados). No se empaqueta en el zip.
+- **Excepción CSP quirúrgica**: el gateway se publica en `{slug}.apps.*/db/` proxificado por Caddy al API; el slug se resuelve por el `Host` header, nunca por input del cliente. `/api/*` sigue inalcanzable desde el dominio de apps.
+- **Motor SQL con allowlist**: `SELECT/INSERT/UPDATE/DELETE` + DDL acotado (`CREATE/ALTER/DROP TABLE·INDEX·VIEW`); bloqueados `ATTACH`, `PRAGMA`, multi-statement y modo inconsistente con el statement. Lecturas truncadas en `maxRows` sin materializar resultados enormes; escrituras con savepoint y rollback automático al exceder la cuota.
+- **Límites configurables por el admin**: cuota por app (10 MB), timeout busy-wait (5 s), filas por respuesta (1 000) y queries/min por usuario (60), desde el panel.
+- **Rate limit de `/db/query`** por app+usuario con error tipado `VCH_DB_RATE_LIMITED`.
+- **Errores tipados estables** (`VCH_DB_*`) expuestos por el SDK.
+- **Apps privadas con allowlist**: visibilidad `pública`/`privada` por app (nacen públicas); allowlist de usuarios individuales gestionada por owner/admin desde el portal.
+- **Enforcement en dos capas**: el catálogo solo lista lo visible para cada usuario; el `forward_auth` de Caddy rechaza el subdominio de apps privadas con página 403 amigable (assets y `/db/` por igual).
+- **Administración de BDs**: vista de uso por app, descarga de copia consistente (checkpoint al cerrar) y reset con confirmación; ambas acciones en el nuevo log `admin_actions`.
+- **Ciclo de vida**: la BD persiste entre versiones de la app; eliminar la app elimina su BD y su allowlist; desactivar versiones no toca los datos.
+- **31 pruebas de integración nuevas** (`infra/smoke-data.sh`): CRUD SQL, allowlist de statements, truncado de filas, cuota con rollback, allowlist de apps privadas (catálogo, forward_auth con Host, BD), admin (uso/descarga/reset) y rate limit.
+
+### Security
+
+- Resolución de app únicamente por `Host` (producción) o path (dev): una app jamás alcanza la BD de otra.
+- Statements fuera del allowlist, `ATTACH` y `PRAGMA` de escritura rechazados antes de ejecutar.
+- Cuota de disco con verificación `page_count × page_size` y rollback del statement que la excede.
+- Parámetros de hasta 4 MB validados por tipo; SQL limitado a 100 KB; un statement por request.
+- Descarga y reset de BDs requieren admin y quedan auditados.
+
 ## [0.1.0] - 2026-10-16
 
 Primera versión funcional del producto: publicación autónoma de apps web internas con pipeline de seguridad, catálogo y auditoría completa.

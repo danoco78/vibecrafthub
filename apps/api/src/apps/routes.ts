@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DbClient } from '../db.js';
 import { requireAuth, requireRole } from '../plugins/auth.js';
 import { loadPolicy } from '../policy.js';
+import { canManageApp, isAppMember } from './access.js';
 import { persistAttempt, publishBundle } from './publish.js';
 import { setActiveVersion } from './storage.js';
 
@@ -46,16 +47,18 @@ async function loadApp(db: DbClient, slug: string): Promise<AppRow | undefined> 
   return res.rows[0];
 }
 
-/** El usuario puede ver la app: pública, propia, o admin. */
-function canSee(app: AppRow, request: FastifyRequest): boolean {
+/** El usuario puede ver la app: pública, propia, admin o en la allowlist (privadas). */
+async function canSee(db: DbClient, app: AppRow, request: FastifyRequest): Promise<boolean> {
   const user = request.user!;
-  return app.visibility === 'public' || app.owner_id === user.id || user.role === 'admin';
+  if (app.visibility === 'public' || app.owner_id === user.id || user.role === 'admin') {
+    return true;
+  }
+  return isAppMember(db, app.id, user.id);
 }
 
 /** El usuario puede administrar la app: dueño o admin. */
 function canManage(app: AppRow, request: FastifyRequest): boolean {
-  const user = request.user!;
-  return app.owner_id === user.id || user.role === 'admin';
+  return canManageApp(app, request);
 }
 
 const createAppSchema = z.object({
@@ -79,6 +82,7 @@ export function appsRoutes(
        JOIN users u ON u.id = a.owner_id
        LEFT JOIN app_versions v ON v.id = a.current_version_id
        WHERE a.visibility = 'public' OR a.owner_id = $1 OR $2 = 'admin'
+              OR EXISTS (SELECT 1 FROM app_members m WHERE m.app_id = a.id AND m.user_id = $1)
        ORDER BY a.created_at DESC`,
       [request.user!.id, request.user!.role],
     );
@@ -108,17 +112,109 @@ export function appsRoutes(
     const { slug } = request.params as { slug: string };
     if (!SLUG_RE.test(slug)) return reply.code(404).send({ error: 'App no encontrada.' });
     const appRow = await loadApp(db, slug);
-    if (!appRow || !canSee(appRow, request)) {
+    if (!appRow || !(await canSee(db, appRow, request))) {
       return reply.code(404).send({ error: 'App no encontrada.' });
     }
     return { app: appRow };
+  });
+
+  // ---------- ajustes (visibilidad, descripción) ----------
+  const updateAppSchema = z.object({
+    visibility: z.enum(['public', 'private']).optional(),
+    description: z.string().max(500).optional(),
+  });
+
+  app.patch('/api/apps/:slug', { preHandler: requireDevOrAdmin }, async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const appRow = await loadApp(db, slug);
+    if (!appRow || !canManage(appRow, request)) {
+      return reply.code(404).send({ error: 'App no encontrada.' });
+    }
+    const parsed = updateAppSchema.safeParse(request.body);
+    if (!parsed.success || (parsed.data.visibility === undefined && parsed.data.description === undefined)) {
+      return reply.code(400).send({ error: 'Nada que actualizar: visibility y/o description.' });
+    }
+    const { visibility, description } = parsed.data;
+    await db.query('UPDATE apps SET visibility = COALESCE($1, visibility), description = COALESCE($2, description) WHERE id = $3', [
+      visibility ?? null,
+      description ?? null,
+      appRow.id,
+    ]);
+    return { app: { ...appRow, visibility: visibility ?? appRow.visibility, description: description ?? appRow.description } };
+  });
+
+  // ---------- allowlist de apps privadas ----------
+  app.get('/api/apps/:slug/members', { preHandler: requireAuth(app) }, async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const appRow = await loadApp(db, slug);
+    if (!appRow || !canManage(appRow, request)) {
+      return reply.code(404).send({ error: 'App no encontrada.' });
+    }
+    const res = await db.query<{ user_id: number; email: string; added_at: string }>(
+      `SELECT m.user_id, u.email, m.created_at AS added_at
+       FROM app_members m JOIN users u ON u.id = m.user_id
+       WHERE m.app_id = $1 ORDER BY u.email ASC`,
+      [appRow.id],
+    );
+    return { members: res.rows };
+  });
+
+  app.post('/api/apps/:slug/members', { preHandler: requireDevOrAdmin }, async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const appRow = await loadApp(db, slug);
+    if (!appRow || !canManage(appRow, request)) {
+      return reply.code(404).send({ error: 'App no encontrada.' });
+    }
+    const parsed = z.object({ email: z.string().email().max(254) }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Email válido requerido.' });
+    }
+    const email = parsed.data.email.toLowerCase().trim();
+    const user = await db.query<{ id: number; email: string }>(
+      'SELECT id, email FROM users WHERE email = $1',
+      [email],
+    );
+    if (user.rows.length === 0) {
+      return reply.code(404).send({ error: `No existe un usuario con email ${email}.` });
+    }
+    const target = user.rows[0];
+    if (target.id === appRow.owner_id) {
+      return reply.code(409).send({ error: 'El dueño de la app ya tiene acceso.' });
+    }
+    const dup = await db.query('SELECT 1 FROM app_members WHERE app_id = $1 AND user_id = $2', [
+      appRow.id,
+      target.id,
+    ]);
+    if (dup.rows.length > 0) {
+      return reply.code(409).send({ error: `${email} ya está en la allowlist.` });
+    }
+    await db.query('INSERT INTO app_members (app_id, user_id) VALUES ($1, $2)', [
+      appRow.id,
+      target.id,
+    ]);
+    return reply.code(201).send({ member: { user_id: target.id, email: target.email } });
+  });
+
+  app.delete('/api/apps/:slug/members/:userId', { preHandler: requireDevOrAdmin }, async (request, reply) => {
+    const { slug, userId } = request.params as { slug: string; userId: string };
+    const appRow = await loadApp(db, slug);
+    if (!appRow || !canManage(appRow, request)) {
+      return reply.code(404).send({ error: 'App no encontrada.' });
+    }
+    const id = Number(userId);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Id inválido.' });
+    await db.query('DELETE FROM app_members WHERE app_id = $1 AND user_id = $2', [
+      appRow.id,
+      id,
+    ]);
+    return { ok: true };
   });
 
   // ---------- versiones ----------
   app.get('/api/apps/:slug/versions', { preHandler: requireAuth(app) }, async (request, reply) => {
     const { slug } = request.params as { slug: string };
     const appRow = await loadApp(db, slug);
-    if (!appRow || !canSee(appRow, request)) {
+    if (!appRow || !(await canSee(db, appRow, request))) {
       return reply.code(404).send({ error: 'App no encontrada.' });
     }
     const res = await db.query(
@@ -239,6 +335,8 @@ export function appsRoutes(
     await db.query('UPDATE apps SET current_version_id = NULL WHERE id = $1', [appRow.id]);
     await db.query('DELETE FROM apps WHERE id = $1', [appRow.id]);
     await fs.rm(path.join(bundlesDir, appRow.slug), { recursive: true, force: true });
+    // La BD de la app (data gateway) se elimina con ella. app_databases cae por FK cascade.
+    await app.appDb.removeData(appRow.slug);
     return { ok: true };
   });
 
@@ -246,7 +344,7 @@ export function appsRoutes(
   app.get('/api/apps/:slug/attempts', { preHandler: requireAuth(app) }, async (request, reply) => {
     const { slug } = request.params as { slug: string };
     const appRow = await loadApp(db, slug);
-    if (!appRow || !canSee(appRow, request)) {
+    if (!appRow || !(await canSee(db, appRow, request))) {
       return reply.code(404).send({ error: 'App no encontrada.' });
     }
     if (!canManage(appRow, request)) {

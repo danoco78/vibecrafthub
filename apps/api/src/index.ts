@@ -10,6 +10,9 @@ import { authRoutes } from './auth/routes.js';
 import { requireAuth } from './plugins/auth.js';
 import { appsRoutes } from './apps/routes.js';
 import { adminRoutes } from './admin/routes.js';
+import { AppDbRegistry } from './datagateway/connections.js';
+import { datagatewayRoutes } from './datagateway/routes.js';
+import { datagatewayAdminRoutes } from './datagateway/admin.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -23,6 +26,7 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
 
   app.decorate('db', db);
   app.decorate('cookieOpts', { domain: cfg.cookieDomain, secure: cfg.cookieSecure });
+  app.decorate('appDb', new AppDbRegistry(cfg.dataDir));
 
   await app.register(cookie);
   await app.register(multipart);
@@ -32,9 +36,11 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   app.get('/api/config', async () => ({ appsUrlTemplate: cfg.appsUrlTemplate }));
 
   authPlugin(app);
-  authRoutes(app, db, cfg.sessionTtlDays);
+  authRoutes(app, db, cfg.sessionTtlDays, cfg.appsHostSuffix);
   appsRoutes(app, db, cfg.bundlesDir);
   adminRoutes(app, db);
+  datagatewayRoutes(app, db, cfg);
+  datagatewayAdminRoutes(app, db);
 
   // Servir bundles directamente (modo dev sin gateway; producción lo hace Caddy con forward_auth).
   if (!cfg.databaseUrl) {
