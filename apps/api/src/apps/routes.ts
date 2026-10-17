@@ -364,7 +364,10 @@ export function appsRoutes(
     return { attempts: res.rows };
   });
 
-  app.get('/api/attempts', { preHandler: requireAuth(app) }, async (request) => {
+  // El historial global es solo para admin y developer (los usuarios no publican).
+  const requireStaff = requireRole(app, 'admin', 'developer');
+
+  app.get('/api/attempts', { preHandler: requireStaff }, async (request) => {
     const user = request.user!;
     const filter = user.role === 'admin' ? '' : 'WHERE pa.user_id = $1';
     const params = user.role === 'admin' ? [] : [user.id];
@@ -383,7 +386,7 @@ export function appsRoutes(
     return { attempts: res.rows };
   });
 
-  app.get('/api/attempts/:id', { preHandler: requireAuth(app) }, async (request, reply) => {
+  app.get('/api/attempts/:id', { preHandler: requireStaff }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Id inválido.' });
     const res = await db.query(

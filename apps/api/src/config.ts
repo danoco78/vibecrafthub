@@ -17,8 +17,8 @@ export interface Config {
   sessionTtlDays: number;
   /**
    * Plantilla de URL pública de las apps publicadas. Debe contener "{slug}".
-   * Dev:      http://localhost:3000/bundles/{slug}/
-   * Compose:  https://{slug}.apps.localhost
+   * Dev: /bundles/{slug}/ (relativa: el iframe hereda la sesión vía proxy de vite).
+   * Compose: https://{slug}.apps.localhost
    */
   appsUrlTemplate: string;
 }
@@ -35,6 +35,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     cookieDomain: env.COOKIE_DOMAIN || undefined,
     cookieSecure: env.COOKIE_SECURE === '1',
     sessionTtlDays: Number(env.SESSION_TTL_DAYS ?? 7),
-    appsUrlTemplate: env.APPS_URL_TEMPLATE ?? 'http://localhost:3000/bundles/{slug}/',
+    appsUrlTemplate: env.APPS_URL_TEMPLATE ?? '/bundles/{slug}/',
   };
 }

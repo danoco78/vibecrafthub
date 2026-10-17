@@ -7,3 +7,4 @@ data/
 bundles/
 *.log
 .DS_Store
+vulnerabilidades*.md

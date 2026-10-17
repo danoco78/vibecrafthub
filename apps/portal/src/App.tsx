@@ -35,7 +35,7 @@ function Layout({ children }: { children: ReactNode }) {
             Catálogo
           </NavLink>
           {user?.role !== 'user' && <NavLink to="/my-apps">Mis apps</NavLink>}
-          <NavLink to="/history">Historial</NavLink>
+          {user?.role !== 'user' && <NavLink to="/history">Historial</NavLink>}
           {user?.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
           <NavLink to="/account">Mi cuenta</NavLink>
         </nav>

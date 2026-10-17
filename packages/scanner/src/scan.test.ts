@@ -165,3 +165,76 @@ test('innerHTML y fetch externo se reportan', () => {
   assert.ok(findings.some((f) => f.rule === 'remote-fetch'));
   assert.ok(findings.some((f) => f.rule === 'remote-image'));
 });
+
+test('rechaza referencias a archivos que no vienen en el bundle (caso real: app generada con IA)', () => {
+  // El HTML referencia js/app.js y css/style.css pero el zip solo trajo index.html
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        [
+          '<!doctype html><html><head>',
+          '<link rel="stylesheet" href="css/style.css">',
+          '<script src="/db/sdk.js"></script>',
+          '<script src="js/app.js"></script>',
+          '</head><body></body></html>',
+        ].join('\n'),
+      ),
+    ],
+    POLICY,
+  );
+  const missing = findings.filter((f) => f.rule === 'missing-referenced-file');
+  assert.equal(missing.length, 2, `esperaba 2 referencias rotas, hubo: ${findings.map((f) => f.rule).join(', ')}`);
+  assert.ok(missing.every((f) => f.severity === 'high'));
+  assert.ok(missing.some((f) => f.file === 'index.html' && f.line === 2 && f.message.includes('css/style.css')));
+  assert.ok(missing.some((f) => f.file === 'index.html' && f.line === 4 && f.message.includes('js/app.js')));
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+  // el SDK de la plataforma (/db/sdk.js) NO es una referencia rota
+  assert.ok(!missing.some((f) => f.message.includes('/db/sdk.js')));
+});
+
+test('referencias existentes con rutas relativas no generan hallazgos', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><link rel="stylesheet" href="./css/style.css"></head><body><a href="ayuda.html">?</a></body></html>'),
+      entry('css/style.css', 'body{}'),
+      entry('ayuda.html', '<html></html>'),
+      entry('pages/detalle.html', '<html><head><script src="../js/util.js"></script></head></html>'),
+      entry('js/util.js', 'x'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((f) => f.rule === 'missing-referenced-file'), JSON.stringify(findings));
+});
+
+test('favicon inexistente no se reporta (extensión no permitida)', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><link rel="icon" href="favicon.ico"></head><body></body></html>'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((f) => f.rule === 'missing-referenced-file'));
+});
+
+test('script inline genera hallazgo alto (la CSP lo bloquea)', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        ['<html><body>', '<script>console.log("muerto por CSP");</script>', '<script src="app.js"></script>', '</body></html>'].join('\n'),
+      ),
+      entry('app.js', 'console.log("vivo");'),
+    ],
+    POLICY,
+  );
+  const inline = findings.filter((f) => f.rule === 'inline-script');
+  assert.equal(inline.length, 1);
+  assert.equal(inline[0].severity, 'high');
+  assert.equal(inline[0].line, 2);
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+});
