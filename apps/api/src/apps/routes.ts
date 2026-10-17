@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DbClient } from '../db.js';
 import { requireAuth, requireRole } from '../plugins/auth.js';
@@ -225,6 +227,20 @@ export function appsRoutes(
       return outcome;
     },
   );
+
+  // ---------- eliminación de app ----------
+  app.delete('/api/apps/:slug', { preHandler: requireDevOrAdmin }, async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const appRow = await loadApp(db, slug);
+    if (!appRow || !canManage(appRow, request)) {
+      return reply.code(404).send({ error: 'App no encontrada.' });
+    }
+    // NULL antes del DELETE: current_version_id referencia app_versions, que cascada con apps
+    await db.query('UPDATE apps SET current_version_id = NULL WHERE id = $1', [appRow.id]);
+    await db.query('DELETE FROM apps WHERE id = $1', [appRow.id]);
+    await fs.rm(path.join(bundlesDir, appRow.slug), { recursive: true, force: true });
+    return { ok: true };
+  });
 
   // ---------- historial de intentos ----------
   app.get('/api/apps/:slug/attempts', { preHandler: requireAuth(app) }, async (request, reply) => {

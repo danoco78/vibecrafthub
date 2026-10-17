@@ -43,6 +43,8 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
       # {slug} se reemplaza por el slug de cada app. Incluye el puerto externo del gateway.
       APPS_URL_TEMPLATE: https://{slug}.apps.vch.local:8443
+      # Enlace "Ir al portal" de la página 401 que sirve el forward_auth
+      PORTAL_PUBLIC_URL: https://portal.vch.local:8443
     volumes:
       - bundles:/srv/bundles
     depends_on:

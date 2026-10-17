@@ -2,6 +2,7 @@ export interface User {
   id: number;
   email: string;
   role: 'admin' | 'developer' | 'user';
+  active?: boolean;
 }
 
 export interface AppInfo {
@@ -119,6 +120,11 @@ export const api = {
   register: (email: string, password: string) =>
     request<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 
   listApps: () => request<{ apps: AppInfo[] }>('/api/apps'),
   createApp: (name: string, description: string) =>
@@ -130,6 +136,8 @@ export const api = {
   versions: (slug: string) => request<{ versions: Version[] }>(`/api/apps/${slug}/versions`),
   activate: (slug: string, id: number) =>
     request<{ ok: boolean }>(`/api/apps/${slug}/versions/${id}/activate`, { method: 'POST' }),
+  deleteApp: (slug: string) =>
+    request<{ ok: boolean }>(`/api/apps/${slug}`, { method: 'DELETE' }),
   publish: (slug: string, file: File) => {
     const form = new FormData();
     form.append('bundle', file, file.name);
@@ -145,6 +153,16 @@ export const api = {
     request<{ user: User }>('/api/admin/users', {
       method: 'POST',
       body: JSON.stringify({ email, password, role }),
+    }),
+  setUserActive: (id: number, active: boolean) =>
+    request<{ user: User }>(`/api/admin/users/${id}/active`, {
+      method: 'PUT',
+      body: JSON.stringify({ active }),
+    }),
+  resetPassword: (id: number, newPassword: string) =>
+    request<{ ok: boolean }>(`/api/admin/users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
     }),
   policy: () =>
     request<{ policy: { blockSeverities: string[]; maxBundleMb: number; maxFiles: number } }>('/api/policy'),

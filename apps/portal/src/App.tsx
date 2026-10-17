@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api, type User } from './api';
 import LoginPage from './pages/LoginPage';
+import AccountPage from './pages/AccountPage';
 import CatalogPage from './pages/CatalogPage';
 import AppDetailPage from './pages/AppDetailPage';
 import MyAppsPage from './pages/MyAppsPage';
@@ -36,6 +37,7 @@ function Layout({ children }: { children: ReactNode }) {
           {user?.role !== 'user' && <NavLink to="/my-apps">Mis apps</NavLink>}
           <NavLink to="/history">Historial</NavLink>
           {user?.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
+          <NavLink to="/account">Mi cuenta</NavLink>
         </nav>
         <div className="user">
           <span>{user?.email}</span>
@@ -132,6 +134,14 @@ export default function App() {
           element={
             <Protected>
               <HistoryPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/account"
+          element={
+            <Protected>
+              <AccountPage />
             </Protected>
           }
         />

@@ -5,8 +5,7 @@ import { useAuth } from '../App';
 
 export default function MyAppsPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [apps, setApps] = useState<AppInfo[]>([]);
+  const navigate = useNavigate();  const [apps, setApps] = useState<AppInfo[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +24,19 @@ export default function MyAppsPage() {
     try {
       const res = await api.createApp(name, description);
       navigate(`/publish?app=${res.app.slug}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
+  async function removeApp(slug: string, appName: string) {
+    if (!window.confirm(`¿Eliminar "${appName}" (${slug})? Se borran sus versiones, bundles e historial. Acción irreversible.`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.deleteApp(slug);
+      load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
     }
@@ -80,6 +92,13 @@ export default function MyAppsPage() {
               <Link className="btn secondary" to={`/apps/${a.slug}`}>
                 Ver
               </Link>
+              <button
+                className="danger"
+                onClick={() => removeApp(a.slug, a.name)}
+                title="Eliminar app, versiones e historial"
+              >
+                Eliminar
+              </button>
             </div>
           </div>
         ))}

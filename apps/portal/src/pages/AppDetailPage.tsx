@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type AppInfo, type Version } from '../api';
 import { useAuth } from '../App';
 
 export default function AppDetailPage() {
   const { slug = '' } = useParams();
+  const navigate = useNavigate();
   const { user, appsUrlTemplate } = useAuth();
   const [app, setApp] = useState<AppInfo | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
@@ -43,6 +44,20 @@ export default function AppDetailPage() {
             <Link className="btn secondary" to="/history">
               Historial
             </Link>
+            <button
+              className="danger"
+              onClick={async () => {
+                if (!window.confirm(`¿Eliminar "${app.name}" (${app.slug})? Acción irreversible.`)) return;
+                try {
+                  await api.deleteApp(app.slug);
+                  navigate('/my-apps');
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Error');
+                }
+              }}
+            >
+              Eliminar
+            </button>
           </>
         )}
       </div>

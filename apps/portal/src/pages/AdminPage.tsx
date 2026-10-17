@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type LlmConfigView, type User } from '../api';
+import { useAuth } from '../App';
 
 interface Policy {
   blockSeverities: string[];
@@ -15,6 +16,7 @@ const SEVERITIES = [
 ];
 
 export default function AdminPage() {
+  const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [llm, setLlm] = useState<LlmConfigView | null>(null);
@@ -119,14 +121,55 @@ export default function AdminPage() {
             <tr>
               <th>Email</th>
               <th>Rol</th>
+              <th>Estado</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id}>
+              <tr key={u.id} style={{ opacity: u.active === false ? 0.5 : 1 }}>
                 <td>{u.email}</td>
                 <td>
                   <span className="badge info">{u.role}</span>
+                </td>
+                <td>
+                  <span className={`badge ${u.active === false ? 'rejected' : 'published'}`}>
+                    {u.active === false ? 'Desactivada' : 'Activa'}
+                  </span>
+                </td>
+                <td>
+                  <div className="row-actions">
+                    {u.id !== user?.id && (
+                      <button
+                        className="secondary"
+                        onClick={async () => {
+                          try {
+                            await api.setUserActive(u.id, u.active === false);
+                            load();
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Error');
+                          }
+                        }}
+                      >
+                        {u.active === false ? 'Activar' : 'Desactivar'}
+                      </button>
+                    )}
+                    <button
+                      className="secondary"
+                      onClick={async () => {
+                        const newPassword = window.prompt(`Nueva contraseña para ${u.email}:`);
+                        if (!newPassword) return;
+                        try {
+                          await api.resetPassword(u.id, newPassword);
+                          setNotice(`Contraseña restablecida para ${u.email}.`);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Error');
+                        }
+                      }}
+                    >
+                      Reset pass
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

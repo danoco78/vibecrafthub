@@ -39,8 +39,8 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
   const requireAdmin = requireRole(app, 'admin');
 
   app.get('/api/admin/users', { preHandler: requireAdmin }, async () => {
-    const res = await db.query<{ id: number; email: string; role: Role; created_at: string }>(
-      'SELECT id, email, role, created_at FROM users ORDER BY created_at ASC',
+    const res = await db.query<{ id: number; email: string; role: Role; active: boolean; created_at: string }>(
+      'SELECT id, email, role, active, created_at FROM users ORDER BY created_at ASC',
     );
     return { users: res.rows };
   });
@@ -96,6 +96,55 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
       p.maxFiles,
     ]);
     return { policy: p };
+  });
+
+  /** Activa/desactiva un usuario. Nadie puede desactivarse a sí mismo. */
+  app.put('/api/admin/users/:id/active', { preHandler: requireAdmin }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    const parsed = z.object({ active: z.boolean() }).safeParse(request.body);
+    if (!Number.isInteger(id) || !parsed.success) {
+      return reply.code(400).send({ error: 'Datos inválidos.' });
+    }
+    if (!parsed.data.active && id === request.user!.id) {
+      return reply.code(400).send({ error: 'No puedes desactivar tu propia cuenta.' });
+    }
+    const res = await db.query<{ id: number; email: string; role: Role; active: boolean }>(
+      'UPDATE users SET active = $1 WHERE id = $2 RETURNING id, email, role, active',
+      [parsed.data.active, id],
+    );
+    if (res.rows.length === 0) {
+      return reply.code(404).send({ error: 'Usuario no encontrado.' });
+    }
+    if (!parsed.data.active) {
+      // Mata las sesiones activas del usuario desactivado
+      await db.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+    }
+    return { user: res.rows[0] };
+  });
+
+  const resetPasswordSchema = z.object({ newPassword: z.string().min(1).max(128) });
+
+  /** Restablece la contraseña de cualquier usuario sin conocer la actual. */
+  app.post('/api/admin/users/:id/reset-password', { preHandler: requireAdmin }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    const parsed = resetPasswordSchema.safeParse(request.body);
+    if (!Number.isInteger(id) || !parsed.success) {
+      return reply.code(400).send({ error: 'Datos inválidos.' });
+    }
+    const strengthError = validatePasswordStrength(parsed.data.newPassword);
+    if (strengthError) return reply.code(400).send({ error: strengthError });
+
+    const passwordHash = await hashPassword(parsed.data.newPassword);
+    const res = await db.query<{ id: number }>(
+      'UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id',
+      [passwordHash, id],
+    );
+    if (res.rows.length === 0) {
+      return reply.code(404).send({ error: 'Usuario no encontrado.' });
+    }
+    // Contraseña comprometida/olvidada → sesiones existentes fuera
+    await db.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+    return { ok: true };
   });
 
   // ---------- revisión LLM ----------

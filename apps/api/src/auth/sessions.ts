@@ -49,7 +49,7 @@ export async function resolveUser(request: FastifyRequest, db: DbClient): Promis
   }>(
     `SELECT u.id, u.email, u.role FROM sessions s
      JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > now()`,
+     WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active = true`,
     [hashToken(token)],
   );
   return res.rows[0];
