@@ -1,0 +1,79 @@
+# Nombre de proyecto fijo: garantiza que SIEMPRE se usen los mismos volúmenes
+# (pgdata, bundles) sin importar el directorio o el comando de arranque.
+name: vibecrafthub
+
+services:
+  # Puertos altos: rootless podman no puede bind 80/443 sin ajustes.
+  # Para puertos privilegiados: corre rootful (`sudo podman compose up`) o
+  # baja el límite (sysctl net.ipv4.ip_unprivileged_port_start=80).
+  gateway:
+    build:
+      context: ..
+      dockerfile: apps/gateway/Dockerfile
+    ports:
+      - '8080:80'
+      - '8443:443'
+      - '8443:443/udp'
+    environment:
+      # Para un dominio real, ej: PORTAL_HOST=portal.empresa.com
+      # y ajusta también APPS_URL_TEMPLATE/COOKIE_DOMAIN en el servicio api.
+      PORTAL_HOST: ${PORTAL_HOST:-portal.vch.local}
+      APPS_WILDCARD: ${APPS_WILDCARD:-*.apps.vch.local}
+      # {labels.3} = slug en slug.apps.vch.local. Con *.apps.localhost sería labels.2.
+      APPS_ROOT_TEMPLATE: /srv/bundles/{labels.3}/active
+    volumes:
+      - bundles:/srv/bundles
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://vch:${POSTGRES_PASSWORD:-vch-cambia}@postgres:5432/vch
+      BUNDLES_DIR: /srv/bundles
+      PORT: '3000'
+      # Cookie válida para portal y subdominios de apps (mismo dominio base requerido)
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.vch.local}
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
+      # {slug} se reemplaza por el slug de cada app. Incluye el puerto externo del gateway.
+      APPS_URL_TEMPLATE: https://{slug}.apps.vch.local:8443
+      # Enlace "Ir al portal" de la página 401 que sirve el forward_auth
+      PORTAL_PUBLIC_URL: https://portal.vch.local:8443
+    volumes:
+      - bundles:/srv/bundles
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: vch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vch-cambia}
+      POSTGRES_DB: vch
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vch -d vch']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  bundles:
+  pgdata:
+  caddy_data:
+  caddy_config:
