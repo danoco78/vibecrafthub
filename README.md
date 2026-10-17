@@ -1,62 +1,63 @@
 # VibeCraftHub
 
+**English** | [Español](README.es.md)
+
 ![Release](https://img.shields.io/badge/release-v0.1.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
 ![Tests](https://img.shields.io/badge/tests-56%20passing-34c98e)
-![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
-**Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
+**Self-hosted platform that lets employees publish internal web applications autonomously and securely** — no IT tickets, no shadow IT, no open ports on desktop PCs.
 
 ---
 
-## El problema que resuelve
+## The problem it solves
 
-La IA multiplicó el *shadow IT*: cualquier empleado construye hoy herramientas web útiles en una tarde. Cuando las comparte, su PC pasa de terminal de consumo a **nodo expositor de servicios**, con la infraestructura de la empresa al descubierto.
+AI has multiplied *shadow IT*: today any employee can build a useful web tool in an afternoon. When they share it, their PC turns from a service consumer into a **service-exposing node**, with the company infrastructure wide open.
 
-VibeCraftHub canaliza esa energía por un camino controlado: un catálogo interno donde cualquiera publica sus apps, y un pipeline de seguridad que revisa **cada publicación** antes de que sea visible. TI deja de ser cuello de botella sin perder el control.
+VibeCraftHub channels that energy down a controlled path: an internal catalog where anyone publishes their apps, and a security pipeline that reviews **every publication** before it becomes visible. IT stops being a bottleneck without losing control.
 
-## Características
+## Features
 
-- 📦 **Publicación autónoma** — el empleado sube un zip con su app (html, js, css, json, xml, sqlite opcional); sin intervención de TI.
-- 🔍 **Pipeline de revisión en 3 etapas** — estructura (zip-slip, extensiones, binarios disfrazados, límites), reglas estáticas con severidades y revisión semántica con LLM (OpenAI-compatible o Anthropic, cloud o local). Cada rechazo entrega un reporte con archivo, línea y corrección sugerida.
-- 🗂️ **Catálogo interno** — las apps se sirven en subdominios aislados con TLS, CSP estricta y sesión obligatoria: una app publicada no puede invocar la API de la plataforma.
-- 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché.
-- 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueantes configurable.
-- 🐳 **Un solo comando** — `podman compose up -d --build` en una VM: gateway, API y base de datos.
+- 📦 **Autonomous publishing** — the employee uploads a zip with their app (html, js, css, json, xml, optional sqlite); no IT intervention.
+- 🔍 **3-stage review pipeline** — structure (zip-slip, extensions, disguised binaries, limits), severity-graded static rules, and LLM semantic review (OpenAI-compatible or Anthropic, cloud or local). Every rejection returns a report with file, line, and suggested fix.
+- 🗂️ **Internal catalog** — apps are served from isolated subdomains with TLS, strict CSP, and mandatory session: a published app cannot call the platform API.
+- 🧾 **Full audit trail** — every publish attempt (successful or rejected) is immutably recorded, with findings, LLM provider, model, and cache stats.
+- 👥 **Lightweight administration** — local users with roles, activation/deactivation, password resets, configurable blocking-severity policy.
+- 🐳 **One command** — `podman compose up -d --build` on a single VM: gateway, API, and database.
 
-## Arquitectura
+## Architecture
 
 ```mermaid
 flowchart LR
-    U["Empleados<br/>(navegador)"] -- "443 TLS · única entrada" --> GW
+    U["Employees<br/>(browser)"] -- "443 TLS · single entry" --> GW
 
-    subgraph VM["VM on-premise · podman compose"]
+    subgraph VM["on-prem VM · podman compose"]
         GW["gateway · Caddy<br/>TLS · forward_auth · CSP"]
-        API["api · Fastify<br/>auth · pipeline · auditoría"]
-        PG[("PostgreSQL<br/>plataforma")]
-        V1[("bundles<br/>inmutables")]
+        API["api · Fastify<br/>auth · pipeline · audit"]
+        PG[("PostgreSQL<br/>platform data")]
+        V1[("bundles<br/>immutable")]
     end
 
-    GW -- "/ → portal SPA" --> PT["React"]
+    GW -- "/ → SPA portal" --> PT["React"]
     GW -- "{slug}.apps.* → bundle" --> V1
     GW -- "/api/*" --> API
     API --> PG
-    API -- "lee/escribe" --> V1
-    API -. "revisión LLM" .-> LLM["OpenAI-compatible<br/>o Anthropic"]
+    API -- "read/write" --> V1
+    API -. "LLM review" .-> LLM["OpenAI-compatible<br/>or Anthropic"]
 ```
 
-**Modelo de seguridad en profundidad:**
+**Defense in depth:**
 
-1. **Pipeline** — nada se publica sin pasar estructura, reglas y política de severidades.
-2. **Aislamiento de red** — cada app vive en `*.apps.empresa.com`; `forward_auth` exige sesión antes de servir cualquier asset; el dominio del app no alcanza a la API.
-3. **CSP estricta** — `default-src 'self'` por app en iframe sandbox: aunque una regla pasara algo, el navegador lo bloquea en runtime.
-4. **Cifrado de credenciales** — contraseñas con Argon2id, sesiones httpOnly + Secure, API keys del LLM nunca expuestas (enmascaradas en el panel).
+1. **Pipeline** — nothing gets published without passing structure, rules, and severity policy.
+2. **Network isolation** — each app lives on `*.apps.company.com`; `forward_auth` requires a session before serving any asset; the app domain cannot reach the platform API.
+3. **Strict CSP** — `default-src 'self'` per app inside a sandboxed iframe: even if a rule misses something, the browser blocks it at runtime.
+4. **Credential hygiene** — passwords hashed with Argon2id, httpOnly + Secure sessions, LLM API keys never exposed (masked in the admin panel).
 
-## Inicio rápido
+## Quick start
 
-Requisitos: podman ≥ 5 (o docker) y 2 GB RAM.
+Requirements: podman ≥ 5 (or docker) and 2 GB RAM.
 
 ```bash
 git clone https://github.com/danoco78/vibecrafthub.git
@@ -64,97 +65,97 @@ cd vibecrafthub/infra
 podman compose up -d --build
 ```
 
-1. Abre `https://localhost:8443` y acepta el certificado de la CA interna de Caddy.
-2. **El primer registro se convierte en admin.** Crea cuentas `developer` desde Admin → Usuarios.
-3. Publica tu primera app (ver formato del bundle abajo) y aparecerá en `https://<slug>.apps.localhost:8443`.
+1. Open `https://localhost:8443` and accept Caddy's internal CA certificate.
+2. **The first registered account becomes admin.** Create `developer` accounts from Admin → Users.
+3. Publish your first app (see the bundle format below) and it shows up at `https://<slug>.apps.localhost:8443`.
 
-Guías completas: [operación local](#operación-local-no-perder-datos) · [desarrollo](#desarrollo) · [dominio real](#dominio-real-empresa).
+Full guides: [local operation](#local-operation-never-lose-data) · [development](#development) · [real domain](#real-domain-companycom).
 
-### Operación local (no perder datos)
+### Local operation (never lose data)
 
-Los datos viven en volúmenes nombrados (`vibecrafthub_pgdata`, `vibecrafthub_bundles`). El compose fija su nombre de proyecto: parar, arrancar o recrear nunca borra datos.
+Data lives in named volumes (`vibecrafthub_pgdata`, `vibecrafthub_bundles`). The compose file pins its project name: stopping, starting, or recreating containers never deletes data.
 
 ```bash
-podman compose up -d          # arrancar
-podman compose stop           # parar (conserva todo)
-podman compose start          # reanudar
-podman compose down           # quita contenedores, LOS DATOS QUEDAN
-podman compose up -d --build  # tras cambiar código del repo
+podman compose up -d          # start
+podman compose stop           # stop (keeps everything)
+podman compose start          # resume
+podman compose down           # removes containers, DATA IS KEPT
+podman compose up -d --build  # after changing repo code
 podman volume export vibecrafthub_pgdata -o backup.tar   # backup
 ```
 
-> ⚠️ Nunca `down -v` ni `podman volume prune`: eso sí elimina usuarios, apps y publicaciones.
+> ⚠️ Never run `down -v` or `podman volume prune`: that DOES delete users, apps, and publications.
 
-### Desarrollo
+### Development
 
 ```bash
 pnpm install && pnpm build
-pnpm test:scanner                 # 12 tests del pipeline
-pnpm dev:api                      # API en :3000 (PGlite embebida, sin docker)
-pnpm dev:portal                   # portal en :5173 con hot-reload
+pnpm test:scanner                 # 12 pipeline unit tests
+pnpm dev:api                      # API on :3000 (embedded PGlite, no docker)
+pnpm dev:portal                   # portal on :5173 with hot-reload
 ```
 
-Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16).
+Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16).
 
-## Formato del bundle
+## Bundle format
 
-Zip con un `app.json` obligatorio en la raíz:
+A zip with a mandatory `app.json` at the root:
 
 ```json
 {
-  "name": "inventario",
+  "name": "inventory",
   "version": "1.0.0",
   "entrypoint": "index.html",
-  "description": "Control de inventario de oficina",
+  "description": "Office inventory tracker",
   "database": { "file": "data.sqlite", "seed": true }
 }
 ```
 
-- Extensiones permitidas: `html`, `js`, `css`, `json`, `xml`, `sqlite`. Todo lo demás se rechaza.
-- `version` es semver y no puede repetirse por app.
-- Límites configurables por el admin: 20 MB y 500 archivos por defecto.
+- Allowed extensions: `html`, `js`, `css`, `json`, `xml`, `sqlite`. Anything else is rejected.
+- `version` is semver and cannot repeat per app.
+- Admin-configurable limits: 20 MB and 500 files by default.
 
-## Pipeline de revisión
+## Review pipeline
 
-| Etapa | Qué revisa | Bloqueo |
+| Stage | What it reviews | Blocking |
 |---|---|---|
-| **1. Estructura** | zip-slip, manifest válido, extensiones permitidas, firmas binarias MZ/ELF, límites | crítico |
-| **2. Reglas estáticas** | `eval`/`new Function` y secrets embebidos (crítica) · `innerHTML`, `document.write`, recursos remotos, WebSockets (alta) · `fetch`/XHR externos, service workers (media) · handlers inline, `target=_blank` (baja) | configurable |
-| **3. Revisión LLM** | XSS, código ofuscado, exfiltración, lógica maliciosa — con caché por hash de archivo | configurable |
+| **1. Structure** | zip-slip, valid manifest, allowed extensions, MZ/ELF binary signatures, limits | critical |
+| **2. Static rules** | `eval`/`new Function` and embedded secrets (critical) · `innerHTML`, `document.write`, remote resources, WebSockets (high) · external `fetch`/XHR, service workers (medium) · inline handlers, `target=_blank` (low) | configurable |
+| **3. LLM review** | XSS, obfuscated code, data exfiltration, malicious logic — cached by file hash | configurable |
 
-El admin define en el panel qué severidades bloquean y qué hace el pipeline si el LLM no responde (continuar con advertencia o bloquear).
+The admin defines in the panel which severities block a publication and what the pipeline does when the LLM is unavailable (continue with a warning, or block).
 
-## Configuración
+## Configuration
 
-| Variable | Default | Descripción |
+| Variable | Default | Description |
 |---|---|---|
-| `POSTGRES_PASSWORD` | `vch-cambia` | **Cámbiala** antes del primer arranque |
-| `PORTAL_HOST` | `portal.vch.local` | Host del portal |
-| `APPS_WILDCARD` | `*.apps.vch.local` | Wildcard de las apps |
-| `COOKIE_DOMAIN` | `.vch.local` | Domain de la cookie de sesión |
-| `COOKIE_SECURE` | `1` | `0` solo para HTTP plano en LAN |
-| `APPS_URL_TEMPLATE` | `https://{slug}.apps.vch.local:8443` | Plantilla de URL pública de las apps |
+| `POSTGRES_PASSWORD` | `vch-cambia` | **Change it** before first start |
+| `PORTAL_HOST` | `portal.vch.local` | Portal host |
+| `APPS_WILDCARD` | `*.apps.vch.local` | Apps wildcard |
+| `COOKIE_DOMAIN` | `.vch.local` | Session cookie domain |
+| `COOKIE_SECURE` | `1` | `0` only for plain-HTTP LAN setups |
+| `APPS_URL_TEMPLATE` | `https://{slug}.apps.vch.local:8443` | Public URL template for apps |
 
-### Dominio real (empresa.com)
+### Real domain (company.com)
 
-- DNS interno con wildcard `*.apps.empresa.com` → la VM.
-- En compose: `PORTAL_HOST=portal.empresa.com`, `APPS_WILDCARD=*.apps.empresa.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.empresa.com`, y el puerto fuera de `APPS_URL_TEMPLATE`.
-- Portal y apps deben compartir **dominio base** para que la cookie de sesión funcione.
-- Sustituye la CA interna de Caddy por certificados reales si lo prefieres.
+- Internal DNS with wildcard `*.apps.company.com` → the VM.
+- In compose: `PORTAL_HOST=portal.company.com`, `APPS_WILDCARD=*.apps.company.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.company.com`, and drop the port from `APPS_URL_TEMPLATE`.
+- Portal and apps must share the same **base domain** for the session cookie to work.
+- Replace Caddy's internal CA with real certificates if you prefer.
 
-### LLM local
+### Local LLM
 
-Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp o vLLM. El código nunca sale de la empresa.
+Point the base URL at your OpenAI-compatible server. From a container: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp, or vLLM. Your code never leaves the company.
 
 ## Roadmap
 
-| Versión | Alcance | Estado |
+| Version | Scope | Status |
 |---|---|---|
-| **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ esta release |
-| **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | diseño listo |
-| **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | |
-| **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | |
+| **v0.1** | Catalog, publish pipeline, LLM review, audit trail, administration | ✅ this release |
+| **v0.2** | Data gateway: shared per-app SQLite via SDK, private apps with allowlists | design ready |
+| **v0.3** | LDAP/Active Directory connector, external domain allowlist | |
+| **v1.0** | Usage metrics, audit export, multi-replica hardening | |
 
-## Licencia
+## License
 
 [MIT](LICENSE)
