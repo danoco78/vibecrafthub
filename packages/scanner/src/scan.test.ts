@@ -238,3 +238,44 @@ test('script inline genera hallazgo alto (la CSP lo bloquea)', () => {
   assert.equal(inline[0].line, 2);
   assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
 });
+
+test('usa VCH.db sin cargar /db/sdk.js → hallazgo alto (caso To-Do 1.1.0)', () => {
+  // Patrón real: app.js con degradación silenciosa, index.html sin el SDK
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><script src="js/app.js" defer></script></head><body></body></html>'),
+      entry(
+        'js/app.js',
+        [
+          'function db() {',
+          "  return (typeof VCH !== 'undefined' && VCH && VCH.db) ? VCH.db : null;",
+          '}',
+          'await VCH.db.run("CREATE TABLE t (id INTEGER)");',
+        ].join('\n'),
+      ),
+    ],
+    POLICY,
+  );
+  const f = findings.find((x) => x.rule === 'vch-sdk-not-loaded');
+  assert.ok(f, 'debe detectar uso de VCH.db sin SDK cargado');
+  assert.equal(f.severity, 'high');
+  assert.equal(f.file, 'js/app.js');
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+});
+
+test('VCH.db con /db/sdk.js cargado no genera hallazgo', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        '<html><head><script src="/db/sdk.js"></script><script src="js/app.js" defer></script></head><body></body></html>',
+      ),
+      entry('js/app.js', 'await VCH.db.run("CREATE TABLE t (id INTEGER)");'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((x) => x.rule === 'vch-sdk-not-loaded'), JSON.stringify(findings));
+  assert.equal(verdictFromFindings(findings, POLICY), 'published');
+});
