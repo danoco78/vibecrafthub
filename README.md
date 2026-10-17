@@ -1,150 +1,100 @@
 # VibeCraftHub
 
-Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura, sin abrir la puerta al shadow IT.
+![Release](https://img.shields.io/badge/release-v0.1.0-4f8cff)
+![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
+![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
+![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
+![Tests](https://img.shields.io/badge/tests-56%20passing-34c98e)
+![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
-- Los empleados publican apps **100% estáticas** (html, js, css, json, xml + sqlite opcional) sin intervención de TI.
-- Todo bundle pasa por un **pipeline de revisión** (estructura, reglas de seguridad, política de severidades) antes de publicarse. Un rechazo entrega un reporte detallado con archivo, línea y corrección sugerida.
-- **Historial completo e inmutable** de cada intento de publicación, exitoso o rechazado.
-- Apps en **subdominio aislado** con CSP estricta y sesión obligatoria: la app nunca puede invocar la API de la plataforma.
-- Despliegue con **un solo `podman compose up`** en una VM on-premise (docker compose también funciona).
+**Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
+
+---
+
+## El problema que resuelve
+
+La IA multiplicó el *shadow IT*: cualquier empleado construye hoy herramientas web útiles en una tarde. Cuando las comparte, su PC pasa de terminal de consumo a **nodo expositor de servicios**, con la infraestructura de la empresa al descubierto.
+
+VibeCraftHub canaliza esa energía por un camino controlado: un catálogo interno donde cualquiera publica sus apps, y un pipeline de seguridad que revisa **cada publicación** antes de que sea visible. TI deja de ser cuello de botella sin perder el control.
+
+## Características
+
+- 📦 **Publicación autónoma** — el empleado sube un zip con su app (html, js, css, json, xml, sqlite opcional); sin intervención de TI.
+- 🔍 **Pipeline de revisión en 3 etapas** — estructura (zip-slip, extensiones, binarios disfrazados, límites), reglas estáticas con severidades y revisión semántica con LLM (OpenAI-compatible o Anthropic, cloud o local). Cada rechazo entrega un reporte con archivo, línea y corrección sugerida.
+- 🗂️ **Catálogo interno** — las apps se sirven en subdominios aislados con TLS, CSP estricta y sesión obligatoria: una app publicada no puede invocar la API de la plataforma.
+- 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché.
+- 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueantes configurable.
+- 🐳 **Un solo comando** — `podman compose up -d --build` en una VM: gateway, API y base de datos.
 
 ## Arquitectura
 
+```mermaid
+flowchart LR
+    U["Empleados<br/>(navegador)"] -- "443 TLS · única entrada" --> GW
+
+    subgraph VM["VM on-premise · podman compose"]
+        GW["gateway · Caddy<br/>TLS · forward_auth · CSP"]
+        API["api · Fastify<br/>auth · pipeline · auditoría"]
+        PG[("PostgreSQL<br/>plataforma")]
+        V1[("bundles<br/>inmutables")]
+    end
+
+    GW -- "/ → portal SPA" --> PT["React"]
+    GW -- "{slug}.apps.* → bundle" --> V1
+    GW -- "/api/*" --> API
+    API --> PG
+    API -- "lee/escribe" --> V1
+    API -. "revisión LLM" .-> LLM["OpenAI-compatible<br/>o Anthropic"]
 ```
-apps/
-  api/        Fastify + TypeScript: auth, apps, versiones, pipeline, historial
-  portal/     React + Vite: catálogo, wizard de publicación, panel admin
-  gateway/    Caddy: TLS, sirve bundles con forward_auth + CSP
-packages/
-  shared/     Tipos compartidos (findings, manifest, policy)
-  scanner/    Reglas de análisis estático (lib pura, testeable)
-infra/
-  docker-compose.yml
-```
 
-- **PostgreSQL** guarda la plataforma (usuarios, apps, versiones, intentos).
-- Los bundles viven en un **volumen** inmutable por versión; un symlink `active` apunta a la versión vigente.
-- En desarrollo sin docker, el API usa **PGlite** (Postgres embebido) y sirve los bundles directamente.
+**Modelo de seguridad en profundidad:**
 
-## Desarrollo
+1. **Pipeline** — nada se publica sin pasar estructura, reglas y política de severidades.
+2. **Aislamiento de red** — cada app vive en `*.apps.empresa.com`; `forward_auth` exige sesión antes de servir cualquier asset; el dominio del app no alcanza a la API.
+3. **CSP estricta** — `default-src 'self'` por app en iframe sandbox: aunque una regla pasara algo, el navegador lo bloquea en runtime.
+4. **Cifrado de credenciales** — contraseñas con Argon2id, sesiones httpOnly + Secure, API keys del LLM nunca expuestas (enmascaradas en el panel).
 
-Requisitos: Node 24+, pnpm 10.
+## Inicio rápido
+
+Requisitos: podman ≥ 5 (o docker) y 2 GB RAM.
 
 ```bash
-pnpm install
-pnpm build          # comparte shared y scanner, api y portal
-pnpm test:scanner   # pruebas del pipeline de revisión
-
-# Terminal 1: API en :3000 (PGlite embebida, sin docker)
-pnpm dev:api
-
-# Terminal 2: portal en :5173 (proxy /api y /bundles al API)
-pnpm dev:portal
-```
-
-Abre http://localhost:5173. El **primer usuario registrado es admin**. Desde Admin → Usuarios crea cuentas `developer` para publicar.
-
-> En desarrollo los bundles se sirven desde el mismo origen que la API (`/bundles/{slug}/`), así que el aislamiento por subdominio de producción **no aplica en dev**. Verifica el aislamiento en el despliegue compose.
-
-### Variables del API (dev)
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `PORT` | `3000` | Puerto del API |
-| `DATABASE_URL` | *(vacío)* | Si se define, usa Postgres; si no, PGlite embebida |
-| `BUNDLES_DIR` | `data/bundles` | Volumen de bundles |
-| `COOKIE_DOMAIN` | *(vacío)* | Domain de la cookie (ej `.localhost` para cubrir subdominios) |
-| `COOKIE_SECURE` | `0` | `1` para HTTPS |
-| `APPS_URL_TEMPLATE` | `http://localhost:3000/bundles/{slug}/` | Plantilla de URL pública de las apps |
-
-## Operación local (no perder datos)
-
-Los datos viven en **volúmenes nombrados** de podman (`vibecrafthub_pgdata`, `vibecrafthub_bundles`, …). Sobreviven a paradas, reinicios y `down`. El compose fija `name: vibecrafthub`, así que el proyecto y sus volúmenes son siempre los mismos aunque cambies de directorio o uses `podman compose` / `podman-compose`.
-
-```bash
-cd infra
-podman compose up -d          # arrancar (primera vez: agrega --build)
-podman compose stop           # parar: conserva contenedores y datos
-podman compose start          # volver a arrancar lo parado
-podman compose down           # elimina contenedores, CONSERVA volúmenes (los datos)
-podman compose logs -f api    # ver logs
-```
-
-**No uses `down -v` ni `podman volume prune`**: eso sí borra los volúmenes con usuarios, apps y publicaciones.
-
-Backup de todo (con el stack parado o en marcha):
-
-```bash
-podman volume export vibecrafthub_pgdata  -o backup-pgdata.tar
-podman volume export vibecrafthub_bundles -o backup-bundles.tar
-# restaurar: podman volume import <volumen> backup.tar
-```
-
-Si algún día arranca con otro nombre de proyecto (contenedores `algo_postgres_1` en vez de `vibecrafthub_postgres_1`), es que usaste otra carpeta o `-p` distinto: para el stack (`podman-compose -p <nombre> down`) y arranca con el compose fijado — tus datos siguen en `vibecrafthub_*`.
-
-## Operación en producción (podman)
-
-Requisitos: podman 5+ y `podman-compose` (o docker-compose, el wrapper `podman compose` usa cualquiera de los dos).
-
-```bash
-cd infra
+git clone https://github.com/danoco78/vibecrafthub.git
+cd vibecrafthub/infra
 podman compose up -d --build
-# equivalente: podman-compose up -d --build
 ```
 
-Servicios: `gateway` (Caddy, únicos puertos expuestos), `api`, `postgres`.
+1. Abre `https://localhost:8443` y acepta el certificado de la CA interna de Caddy.
+2. **El primer registro se convierte en admin.** Crea cuentas `developer` desde Admin → Usuarios.
+3. Publica tu primera app (ver formato del bundle abajo) y aparecerá en `https://<slug>.apps.localhost:8443`.
 
-- **Rootless**: el gateway publica en **8080 (HTTP) y 8443 (HTTPS)** porque un usuario sin privilegios no puede bind 80/443. Abre https://localhost:8443. Para puertos estándar: corre rootful (`sudo podman compose up -d --build`) o baja `net.ipv4.ip_unprivileged_port_start=80`.
-- Las imágenes base están **totalmente calificadas** (`docker.io/library/...`): podman no resuelve shortnames sin interacción.
-- Los datos viven en volúmenes nombrados de podman (`podman volume ls`): bundles, pgdata, certs de Caddy.
-- Acepta el certificado de la CA interna de Caddy la primera vez (o instala tu propia CA).
-- Registra el admin, crea usuarios, publica apps.
-- Requisito de red para dominio real: DNS interno con wildcard `*.apps.empresa.com` apuntando a la VM.
+Guías completas: [operación local](#operación-local-no-perder-datos) · [desarrollo](#desarrollo) · [dominio real](#dominio-real-empresa).
 
-### Dominio real (empresa.com)
+### Operación local (no perder datos)
 
-Ajusta en `infra/docker-compose.yml`:
+Los datos viven en volúmenes nombrados (`vibecrafthub_pgdata`, `vibecrafthub_bundles`). El compose fija su nombre de proyecto: parar, arrancar o recrear nunca borra datos.
 
-| Variable | Valor para empresa.com |
-|---|---|
-| `PORTAL_HOST` | `portal.empresa.com` |
-| `APPS_WILDCARD` | `*.apps.empresa.com` |
-| `APPS_ROOT_TEMPLATE` | `/srv/bundles/{labels.3}/active` |
-| `APPS_URL_TEMPLATE` | `https://{slug}.apps.empresa.com` |
-| `COOKIE_DOMAIN` | `.empresa.com` |
+```bash
+podman compose up -d          # arrancar
+podman compose stop           # parar (conserva todo)
+podman compose start          # reanudar
+podman compose down           # quita contenedores, LOS DATOS QUEDAN
+podman compose up -d --build  # tras cambiar código del repo
+podman volume export vibecrafthub_pgdata -o backup.tar   # backup
+```
 
-Requisito: portal y apps deben compartir **dominio base** (mismo sitio registrable) para que la cookie de sesión funcione en el iframe.
+> ⚠️ Nunca `down -v` ni `podman volume prune`: eso sí elimina usuarios, apps y publicaciones.
 
-### Variables del compose
+### Desarrollo
 
-| Variable | Default | Descripción |
-|---|---|---|
-| `POSTGRES_PASSWORD` | `vch-cambia` | **Cámbiala** antes del primer arranque |
-| `PORTAL_HOST` | `localhost` | Host del portal |
-| `APPS_WILDCARD` | `*.apps.localhost` | Wildcard de las apps |
-| `COOKIE_DOMAIN` | `.localhost` | Domain de la cookie de sesión |
-| `COOKIE_SECURE` | `1` | `0` solo si sirves por HTTP plano en LAN |
+```bash
+pnpm install && pnpm build
+pnpm test:scanner                 # 12 tests del pipeline
+pnpm dev:api                      # API en :3000 (PGlite embebida, sin docker)
+pnpm dev:portal                   # portal en :5173 con hot-reload
+```
 
-> Si mapeas el gateway a 80/443 reales, quita el puerto `:8443` de `APPS_URL_TEMPLATE` en `infra/docker-compose.yml` y ajusta `PORTAL_HOST`.
-
-### Topología local: `*.apps.localhost` y la cookie
-
-`localhost` figura en la Public Suffix List: curl y navegadores estrictos convierten `Domain=.localhost` en cookie **de host único**, así que la sesión no llega a los subdominios `*.apps.localhost` (el gateway responde 401 por `forward_auth`). El portal sí funciona; solo falla el acceso a las apps por subdominio.
-
-Para probar el aislamiento completo en local usa un dominio que no esté en la PSL:
-
-1. Entradas en `/etc/hosts` (o dnsmasq con `address=/.apps.vch.local/127.0.0.1`):
-
-   ```
-   127.0.0.1 portal.vch.local
-   127.0.0.1 miapp.apps.vch.local   # una por app, o dnsmasq wildcard
-   ```
-
-2. En `infra/docker-compose.yml`: `PORTAL_HOST=portal.vch.local`, `APPS_WILDCARD=*.apps.vch.local`, `COOKIE_DOMAIN=.vch.local`, `APPS_URL_TEMPLATE=https://{slug}.apps.vch.local:8443`.
-
-3. Acepta/instala la CA interna de Caddy en el navegador.
-
-Con un dominio real (`empresa.com`) no aplica: no está en la PSL y `Domain=.empresa.com` cubre portal y apps sin pasos extra.
+Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16).
 
 ## Formato del bundle
 
@@ -153,35 +103,58 @@ Zip con un `app.json` obligatorio en la raíz:
 ```json
 {
   "name": "inventario",
-  "version": "1.2.0",
+  "version": "1.0.0",
   "entrypoint": "index.html",
   "description": "Control de inventario de oficina",
-  "database": { "file": "data.sqlite", "seed": true },
-  "externalDomains": []
+  "database": { "file": "data.sqlite", "seed": true }
 }
 ```
 
-- Extensiones permitidas: `html`, `js`, `css`, `json`, `xml`, `sqlite`. Cualquier otra cosa rechaza la publicación.
+- Extensiones permitidas: `html`, `js`, `css`, `json`, `xml`, `sqlite`. Todo lo demás se rechaza.
 - `version` es semver y no puede repetirse por app.
-- `database` es opcional: si viene, el `.sqlite` se valida (encabezado + `integrity_check`) y queda almacenado inmutable con la versión. En v1 la plataforma lo expondrá como base compartida vía data gateway; hoy se valida y archiva.
-- Límites configurables por el admin (política): 20 MB y 500 archivos por defecto.
+- Límites configurables por el admin: 20 MB y 500 archivos por defecto.
 
 ## Pipeline de revisión
 
-1. **Estructura**: zip válido, sin zip-slip, manifest válido, extensiones permitidas, sin binarios disfrazados, límites.
-2. **Reglas estáticas** con severidad: `eval`/`new Function` y secrets embebidos (crítica); `innerHTML`, `document.write`, scripts/CSS/iframes remotos, WebSockets (alta); `fetch`/XHR externos, service workers, imágenes remotas (media); handlers inline, `target=_blank` (baja).
-3. **Política**: el admin define qué severidades bloquean (por defecto crítica y alta).
-4. **Resultado**: rechazo con reporte detallado (regla, archivo, línea, snippet, corrección sugerida) o publicación de versión inmutable.
-5. **Historial**: todo intento queda registrado con sus hallazgos completos.
+| Etapa | Qué revisa | Bloqueo |
+|---|---|---|
+| **1. Estructura** | zip-slip, manifest válido, extensiones permitidas, firmas binarias MZ/ELF, límites | crítico |
+| **2. Reglas estáticas** | `eval`/`new Function` y secrets embebidos (crítica) · `innerHTML`, `document.write`, recursos remotos, WebSockets (alta) · `fetch`/XHR externos, service workers (media) · handlers inline, `target=_blank` (baja) | configurable |
+| **3. Revisión LLM** | XSS, código ofuscado, exfiltración, lógica maliciosa — con caché por hash de archivo | configurable |
 
-Defensa en profundidad en runtime: subdominio por app + `forward_auth` (sesión obligatoria) + CSP `default-src 'self'` + iframe `sandbox`. Aunque una regla dejara pasar algo, el navegador lo bloquea en runtime.
+El admin define en el panel qué severidades bloquean y qué hace el pipeline si el LLM no responde (continuar con advertencia o bloquear).
+
+## Configuración
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `POSTGRES_PASSWORD` | `vch-cambia` | **Cámbiala** antes del primer arranque |
+| `PORTAL_HOST` | `portal.vch.local` | Host del portal |
+| `APPS_WILDCARD` | `*.apps.vch.local` | Wildcard de las apps |
+| `COOKIE_DOMAIN` | `.vch.local` | Domain de la cookie de sesión |
+| `COOKIE_SECURE` | `1` | `0` solo para HTTP plano en LAN |
+| `APPS_URL_TEMPLATE` | `https://{slug}.apps.vch.local:8443` | Plantilla de URL pública de las apps |
+
+### Dominio real (empresa.com)
+
+- DNS interno con wildcard `*.apps.empresa.com` → la VM.
+- En compose: `PORTAL_HOST=portal.empresa.com`, `APPS_WILDCARD=*.apps.empresa.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.empresa.com`, y el puerto fuera de `APPS_URL_TEMPLATE`.
+- Portal y apps deben compartir **dominio base** para que la cookie de sesión funcione.
+- Sustituye la CA interna de Caddy por certificados reales si lo prefieres.
+
+### LLM local
+
+Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp o vLLM. El código nunca sale de la empresa.
 
 ## Roadmap
 
-1. **MVP** (este repo): auth local, publicación con pipeline, catálogo, historial, panel admin.
-2. **v1**: data gateway + SDK (SQLite compartida por app), apps privadas con allowlist, conector LDAP/AD.
-3. **v2**: revisión con LLM (OpenAI-compatible/Anthropic, local o cloud), allowlist de dominios externos, rollback UI, métricas, export de auditoría.
+| Versión | Alcance | Estado |
+|---|---|---|
+| **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ esta release |
+| **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | diseño listo |
+| **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | |
+| **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | |
 
 ## Licencia
 
-Ver [LICENSE](LICENSE).
+[MIT](LICENSE)
