@@ -24,6 +24,7 @@ done
 BASE="http://localhost:$PORT"
 JAR_ADMIN="$TMP/admin.txt"
 JAR_DEV="$TMP/dev.txt"
+JAR_USER="$TMP/user.txt"
 PASS=0
 FAIL=0
 
@@ -119,6 +120,19 @@ expect_eq "3 intentos registrados (admin ve todos)" \
 ATTEMPT_ID=$(curl -s -b "$JAR_DEV" "$BASE/api/attempts" | json_field "d['attempts'][0]['id']")
 expect_eq "detalle de intento incluye findings" \
   "$(curl -s -b "$JAR_DEV" "$BASE/api/attempts/$ATTEMPT_ID" | json_field "len(d['attempt']['findings']) > 0")" "True"
+
+echo "== historial restringido a admin y developer =="
+curl -s -b "$JAR_ADMIN" -H 'Content-Type: application/json' \
+  -d '{"email":"viewer@empresa.com","password":"viewpass123","role":"user"}' \
+  "$BASE/api/admin/users" >/dev/null
+curl -s -c "$JAR_USER" -H 'Content-Type: application/json' \
+  -d '{"email":"viewer@empresa.com","password":"viewpass123"}' "$BASE/api/auth/login" >/dev/null
+expect_eq "rol user: GET /api/attempts → 403" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR_USER" "$BASE/api/attempts")" "403"
+expect_eq "rol user: detalle de intento → 403" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR_USER" "$BASE/api/attempts/$ATTEMPT_ID")" "403"
+expect_eq "developer sí ve el historial" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR_DEV" "$BASE/api/attempts")" "200"
 
 echo
 echo "== resultado: $PASS ok, $FAIL fallos =="

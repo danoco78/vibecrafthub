@@ -59,16 +59,20 @@ ${
   compartido
     ? `
 ## Persistencia (SDK del data gateway)
-Los usuarios comparten una base de datos SQLite por app mediante el SDK de la plataforma. Ya está disponible en la página, no hay que instalar nada:
+Los usuarios comparten una base de datos SQLite por app mediante el SDK de la plataforma. Ya está disponible en la página, no hay que instalar nada.
+
+OBLIGATORIO: en el <head> del index.html incluye PRIMERO el SDK y después tus archivos, así:
 
 <script src="/db/sdk.js"></script>
-<script>
+<script src="js/app.js" defer></script>
+
+Si usas VCH.db sin cargar /db/sdk.js, la app falla con "VCH is not defined". Dentro de js/app.js:
+
   // El esquema es responsabilidad de la app; la BD persiste entre versiones.
   await VCH.db.run('CREATE TABLE IF NOT EXISTS notas (id INTEGER PRIMARY KEY, autor TEXT, texto TEXT, fecha TEXT)');
   await VCH.db.run('INSERT INTO notas (autor, texto, fecha) VALUES (?, ?, ?)', [autor, texto, fecha]); // SIEMPRE con placeholders
   const { rows, truncated } = await VCH.db.all('SELECT * FROM notas ORDER BY fecha DESC');
   const una = await VCH.db.get('SELECT * FROM notas WHERE id = ?', [id]);
-</script>
 
 - Un statement por llamada a VCH.db.*; los valores SIEMPRE con ? o :nombre (nunca concatenados).
 - Datos iniciales idempotentes: CREATE TABLE IF NOT EXISTS + INSERT OR IGNORE, para no duplicarlos al publicar una nueva versión.

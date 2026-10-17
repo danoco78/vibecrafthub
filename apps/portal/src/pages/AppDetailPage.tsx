@@ -208,6 +208,8 @@ export default function AppDetailPage() {
             <a href={appUrl} target="_blank" rel="noreferrer" className="mono">
               {appUrl}
             </a>
+            {' · '}¿Se ve en blanco? Abre la URL directa en una pestaña nueva y acepta el certificado
+            del subdominio: los iframes no pueden mostrar avisos de certificado.
           </p>
         </>
       ) : (
