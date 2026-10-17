@@ -51,9 +51,10 @@ export function buildPrompt(a: Answers): string {
 2. Extensiones permitidas ÚNICAMENTE: .html, .js, .css, .json, .xml, .sqlite. Cualquier otro archivo se rechaza.
 3. Todo autocontenido: ningún recurso remoto (CDNs, fuentes externas, imágenes de internet, WebSockets, fetch a otros dominios). Todos los assets van dentro del zip.
 4. Prohibido usar: eval, new Function, innerHTML, document.write, handlers inline (onclick="…"), service workers y secretos o API keys embebidas. Construye el HTML con createElement/textContent o plantillas seguras.
-5. El entrypoint es index.html; organiza el JavaScript y el CSS en archivos propios.
-6. Límites: máximo 20 MB y 500 archivos en total.
-7. Los archivos finales deben funcionar al abrirse tal cual: nada que compilar ni instalar.
+5. PROHIBIDO generar bloques <script>…</script> con código dentro del HTML: la CSP de la plataforma los bloquea y ese código NUNCA se ejecuta. TODO el JavaScript va en archivos .js cargados con <script src="archivo.js" defer></script>, y el arranque de la app se hace al FINAL del .js principal con document.addEventListener('DOMContentLoaded', iniciar).
+6. El entrypoint es index.html; organiza el JavaScript y el CSS en archivos propios (ej.: js/app.js, css/style.css).
+7. Límites: máximo 20 MB y 500 archivos en total.
+8. Los archivos finales deben funcionar al abrirse tal cual: nada que compilar ni instalar.
 ${
   compartido
     ? `
@@ -77,8 +78,9 @@ Los usuarios comparten una base de datos SQLite por app mediante el SDK de la pl
 }
 ## Formato de entrega
 - La lista completa de archivos, cada uno con su contenido íntegro (sin pseudocódigo ni "…" que abrevie).
+- ANTES de responder, verifica que CADA src y href del HTML corresponda a un archivo que vas a entregar, con la misma ruta relativa (js/app.js, css/style.css…). El error más común es entregar el index.html y olvidar el resto: la app se publica rota.
 - Interfaz en español, limpia y directa para personas sin formación técnica: textos claros, botones evidentes, validación de formularios y mensajes de error amables.
-- Cierra indicando en 3 pasos cómo empaquetar el zip y publicarlo desde el portal.`;
+- Cierra indicando en 3 pasos cómo empaquetar el zip (TODOS los archivos del listado, no solo el index.html) y publicarlo desde el portal.`;
 }
 
 export default function PromptWizard({ onClose }: { onClose: () => void }) {

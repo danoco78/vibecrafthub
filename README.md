@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-87%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-91%20passing-34c98e)
 
 **Self-hosted platform that lets employees publish internal web applications autonomously and securely** — no IT tickets, no shadow IT, no open ports on desktop PCs.
 
@@ -145,7 +145,7 @@ A zip with a mandatory `app.json` at the root:
 | Stage | What it reviews | Blocking |
 |---|---|---|
 | **1. Structure** | zip-slip, valid manifest, allowed extensions, MZ/ELF binary signatures, limits | critical |
-| **2. Static rules** | `eval`/`new Function` and embedded secrets (critical) · `innerHTML`, `document.write`, remote resources, WebSockets (high) · external `fetch`/XHR, service workers (medium) · inline handlers, `target=_blank` (low) | configurable |
+| **2. Static rules** | `eval`/`new Function` and embedded secrets (critical) · `innerHTML`, `document.write`, remote resources, WebSockets, inline `<script>`, broken HTML references to missing files (high) · external `fetch`/XHR, service workers (medium) · inline handlers, `target=_blank` (low) | configurable |
 | **3. LLM review** | XSS, obfuscated code, data exfiltration, malicious logic — cached by file hash | configurable |
 
 The admin defines in the panel which severities block a publication and what the pipeline does when the LLM is unavailable (continue with a warning, or block).

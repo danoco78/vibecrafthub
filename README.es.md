@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-87%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-91%20passing-34c98e)
 ![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
 **Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
@@ -146,7 +146,7 @@ Zip con un `app.json` obligatorio en la raíz:
 | Etapa | Qué revisa | Bloqueo |
 |---|---|---|
 | **1. Estructura** | zip-slip, manifest válido, extensiones permitidas, firmas binarias MZ/ELF, límites | crítico |
-| **2. Reglas estáticas** | `eval`/`new Function` y secrets embebidos (crítica) · `innerHTML`, `document.write`, recursos remotos, WebSockets (alta) · `fetch`/XHR externos, service workers (media) · handlers inline, `target=_blank` (baja) | configurable |
+| **2. Reglas estáticas** | `eval`/`new Function` y secrets embebidos (crítica) · `innerHTML`, `document.write`, recursos remotos, WebSockets, `<script>` inline, referencias rotas del HTML a archivos ausentes (alta) · `fetch`/XHR externos, service workers (media) · handlers inline, `target=_blank` (baja) | configurable |
 | **3. Revisión LLM** | XSS, código ofuscado, exfiltración, lógica maliciosa — con caché por hash de archivo | configurable |
 
 El admin define en el panel qué severidades bloquean y qué hace el pipeline si el LLM no responde (continuar con advertencia o bloquear).
