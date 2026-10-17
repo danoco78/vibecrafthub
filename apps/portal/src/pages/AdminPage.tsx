@@ -128,7 +128,13 @@ export default function AdminPage() {
       });
       setLlm(res.config);
       setLlmApiKey('');
-      setNotice('Configuración LLM guardada.');
+      // El API corre en contenedor: 127.0.0.1/localhost apuntan al propio contenedor
+      const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(llm.baseUrl);
+      setNotice(
+        loopback
+          ? 'Configuración LLM guardada, pero OJO: la URL usa localhost/127.0.0.1 y el API corre dentro de un contenedor — así no alcanzará tu modelo. Usa http://host.containers.internal:puerto y arranca el servidor del LLM con --host 0.0.0.0.'
+          : 'Configuración LLM guardada.',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
     }
