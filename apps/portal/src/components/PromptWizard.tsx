@@ -52,21 +52,18 @@ export function buildPrompt(a: Answers): string {
 3. Todo autocontenido: ningún recurso remoto (CDNs, fuentes externas, imágenes de internet, WebSockets, fetch a otros dominios). Todos los assets van dentro del zip.
 4. Prohibido usar: eval, new Function, innerHTML, document.write, handlers inline (onclick="…"), service workers y secretos o API keys embebidas. Construye el HTML con createElement/textContent o plantillas seguras.
 5. PROHIBIDO generar bloques <script>…</script> con código dentro del HTML: la CSP de la plataforma los bloquea y ese código NUNCA se ejecuta. TODO el JavaScript va en archivos .js cargados con <script src="archivo.js" defer></script>, y el arranque de la app se hace al FINAL del .js principal con document.addEventListener('DOMContentLoaded', iniciar).
-6. El entrypoint es index.html; organiza el JavaScript y el CSS en archivos propios (ej.: js/app.js, css/style.css).
-7. Límites: máximo 20 MB y 500 archivos en total.
-8. Los archivos finales deben funcionar al abrirse tal cual: nada que compilar ni instalar.
+6. Si la app guarda datos compartidos, el <head> del index.html DEBE cargar el SDK del data gateway ANTES que tus archivos. Primera línea de scripts del <head>:
+   <script src="/db/sdk.js"></script>
+   <script src="js/app.js" defer></script>
+   Sin esa línea, la variable VCH no existe y NADA se guarda. PROHIBIDO escribir un "modo degradado" que continúe sin base de datos (nada de comprobar "typeof VCH" para saltarte la persistencia): si la carga del SDK falla, muestra el error en pantalla, no pierdas los datos en silencio.
+7. El entrypoint es index.html; organiza el JavaScript y el CSS en archivos propios (ej.: js/app.js, css/style.css).
+8. Límites: máximo 20 MB y 500 archivos en total.
+9. Los archivos finales deben funcionar al abrirse tal cual: nada que compilar ni instalar.
 ${
   compartido
     ? `
-## Persistencia (SDK del data gateway)
-Los usuarios comparten una base de datos SQLite por app mediante el SDK de la plataforma. Ya está disponible en la página, no hay que instalar nada.
-
-OBLIGATORIO: en el <head> del index.html incluye PRIMERO el SDK y después tus archivos, así:
-
-<script src="/db/sdk.js"></script>
-<script src="js/app.js" defer></script>
-
-Si usas VCH.db sin cargar /db/sdk.js, la app falla con "VCH is not defined". Dentro de js/app.js:
+## Persistencia (SDK del data gateway — ver también la restricción 6)
+Los usuarios comparten una base de datos SQLite por app mediante el SDK de la plataforma. Ya está disponible en la página, no hay que instalar nada. En js/app.js:
 
   // El esquema es responsabilidad de la app; la BD persiste entre versiones.
   await VCH.db.run('CREATE TABLE IF NOT EXISTS notas (id INTEGER PRIMARY KEY, autor TEXT, texto TEXT, fecha TEXT)');
@@ -82,7 +79,11 @@ Si usas VCH.db sin cargar /db/sdk.js, la app falla con "VCH is not defined". Den
 }
 ## Formato de entrega
 - La lista completa de archivos, cada uno con su contenido íntegro (sin pseudocódigo ni "…" que abrevie).
-- ANTES de responder, verifica que CADA src y href del HTML corresponda a un archivo que vas a entregar, con la misma ruta relativa (js/app.js, css/style.css…). El error más común es entregar el index.html y olvidar el resto: la app se publica rota.
+- ANTES de responder, verifica este checklist:
+  (a) CADA src y href del HTML corresponde a un archivo que vas a entregar, con la misma ruta relativa (js/app.js, css/style.css…).
+  (b) Si la app usa VCH.db, el <head> del index.html contiene <script src="/db/sdk.js"></script> — sin excepciones.
+  (c) Ningún bloque <script> inline en el HTML.
+  El error más común es entregar el index.html y olvidar el resto de archivos: la app se publica rota.
 - Interfaz en español, limpia y directa para personas sin formación técnica: textos claros, botones evidentes, validación de formularios y mensajes de error amables.
 - Cierra indicando en 3 pasos cómo empaquetar el zip (TODOS los archivos del listado, no solo el index.html) y publicarlo desde el portal.`;
 }
