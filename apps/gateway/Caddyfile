@@ -29,6 +29,9 @@
 
 	forward_auth api:3000 {
 		uri /api/auth/check
+		# v0.3: la respuesta 204 trae la CSP calculada para ESA app
+		# (dominios externos aprobados); sobrescribe la estática de abajo.
+		copy_headers Content-Security-Policy
 	}
 
 	# Data gateway (v0.2): la app consulta SU SQLite vía /db/* en su propio

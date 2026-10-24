@@ -14,6 +14,7 @@ import { AppDbRegistry } from './datagateway/connections.js';
 import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
 import { domainsRoutes } from './domains/routes.js';
+import { buildAppCsp, resolveApprovedDomains } from './domains/csp.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -37,7 +38,7 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   app.get('/api/config', async () => ({ appsUrlTemplate: cfg.appsUrlTemplate }));
 
   authPlugin(app);
-  authRoutes(app, db, cfg.sessionTtlDays, cfg.appsHostSuffix);
+  authRoutes(app, db, cfg.sessionTtlDays, cfg.appsHostSuffix, cfg.portalPublicUrl);
   appsRoutes(app, db, cfg.bundlesDir);
   adminRoutes(app, db);
   datagatewayRoutes(app, db, cfg);
@@ -65,13 +66,12 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
           '.xml': 'application/xml; charset=utf-8',
           '.sqlite': 'application/octet-stream',
         };
+        // CSP por app: dominios aprobados en connect-src/img-src (v0.3).
+        const approved = await resolveApprovedDomains(db, slug);
         reply
           .header('content-type', mimes[ext] ?? 'application/octet-stream')
           .header('x-content-type-options', 'nosniff')
-          .header(
-            'content-security-policy',
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'",
-          );
+          .header('content-security-policy', buildAppCsp(approved));
         return data;
       } catch {
         return reply.code(404).send();

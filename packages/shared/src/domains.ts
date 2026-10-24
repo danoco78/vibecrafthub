@@ -32,6 +32,16 @@ export function hostnameOf(url: string): string | null {
   return normalized;
 }
 
+/** Normaliza una lista de dominios declarados: válidos, únicos, minúsculas. */
+export function normalizeDomainList(inputs: string[]): string[] {
+  const out: string[] = [];
+  for (const input of inputs) {
+    const d = normalizeDomain(input);
+    if (d && !out.includes(d)) out.push(d);
+  }
+  return out;
+}
+
 /**
  * Primer host con URL explícita dentro de una línea de código
  * (https://, wss://, protocol-relative //host/…). Null si no hay.

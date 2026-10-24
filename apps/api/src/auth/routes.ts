@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { DbClient } from '../db.js';
 import { requireRole } from '../plugins/auth.js';
 import { canAccessApp, loadAppBySlug, slugFromHost } from '../apps/access.js';
+import { buildAppCsp, resolveApprovedDomains } from '../domains/csp.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwords.js';
 import {
   COOKIE_OPTS_KEY,
@@ -76,7 +77,13 @@ function forbiddenHtml(appName: string): string {
 <body><div><h1>Acceso restringido</h1><p>La aplicación <strong>${safeName}</strong> es privada y tu cuenta no está en su lista de acceso.</p><p>Pide al dueño de la app que te añada, o <a href="${portalUrl}">vuelve al portal</a>.</p></div></body></html>`;
 }
 
-export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: number, appsHostSuffix = '.apps.'): void {
+export function authRoutes(
+  app: FastifyInstance,
+  db: DbClient,
+  sessionTtlDays: number,
+  appsHostSuffix = '.apps.',
+  portalPublicUrl?: string,
+): void {
   /**
    * Primer usuario registrado = admin. Resto se crean desde /api/admin/users.
    */
@@ -185,7 +192,9 @@ export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: n
 
   /** Endpoint para Caddy forward_auth: 204 si la sesión es válida, 401 si no.
    *  El cuerpo del 401 se copia al cliente: página amigable con enlace al portal.
-   *  v0.2: si el Host es de una app privada, además exige estar en la allowlist (403). */
+   *  v0.2: si el Host es de una app privada, además exige estar en la allowlist (403).
+   *  v0.3: devuelve la CSP por app (dominios aprobados) para que Caddy la
+   *  copie al request original con copy_headers — sin peticiones extra. */
   app.get('/api/auth/check', async (request, reply) => {
     if (!request.user) {
       reply.code(401).header('content-type', 'text/html; charset=utf-8');
@@ -197,6 +206,11 @@ export function authRoutes(app: FastifyInstance, db: DbClient, sessionTtlDays: n
       if (appRow && !(await canAccessApp(db, appRow, request.user))) {
         reply.code(403).header('content-type', 'text/html; charset=utf-8');
         return forbiddenHtml(appRow.name);
+      }
+      if (appRow) {
+        const approved = await resolveApprovedDomains(db, slug);
+        const frameAncestors = portalPublicUrl ? new URL(portalPublicUrl).hostname : undefined;
+        reply.header('content-security-policy', buildAppCsp(approved, frameAncestors));
       }
     }
     return reply.code(204).send();

@@ -11,6 +11,8 @@ export interface Config {
   dataDir: string;
   /** Sufijo de host de las apps (ej: ".apps.empresa.com") para resolver el slug desde el Host. */
   appsHostSuffix: string;
+  /** URL pública del portal; su host alimenta frame-ancestors en la CSP por app. */
+  portalPublicUrl?: string;
   /** Domain de la cookie de sesión, ej: ".localhost" para cubrir subdominios. Vacío = host-only. */
   cookieDomain?: string;
   cookieSecure: boolean;
@@ -32,6 +34,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     bundlesDir: env.BUNDLES_DIR ?? 'data/bundles',
     dataDir: env.DATA_DIR ?? 'data/appdb',
     appsHostSuffix: env.APPS_HOST_SUFFIX ?? '.apps.',
+    portalPublicUrl: env.PORTAL_PUBLIC_URL || undefined,
     cookieDomain: env.COOKIE_DOMAIN || undefined,
     cookieSecure: env.COOKIE_SECURE === '1',
     sessionTtlDays: Number(env.SESSION_TTL_DAYS ?? 7),

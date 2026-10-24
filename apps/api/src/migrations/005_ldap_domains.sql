@@ -31,3 +31,7 @@ CREATE TABLE IF NOT EXISTS external_domain_allowlist (
   note       TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Dominios externos declarados (normalizados) por cada versión publicada:
+-- alimentan la CSP por app (intersección dinámica con la allowlist)
+ALTER TABLE app_versions ADD COLUMN IF NOT EXISTS external_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
