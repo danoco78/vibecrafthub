@@ -90,7 +90,7 @@ Presets documentados (no secretos): AD usa `userPrincipalName`/`mail` + `memberO
 
 ### 4.4 Roles por grupos
 
-Al autenticar se leen los grupos del usuario (`group_attr`). El mapeo ordenado decide el rol (primera coincidencia). Sin coincidencias ⇒ `default_role`. El mapeo puede conceder `admin`: es decisión del admin de la plataforma y queda documentada en el panel (el equipo del directorio pasa a controlar quién es admin si así se mapea).
+Al autenticar se leen los grupos del usuario (`group_attr`). El mapeo ordenado decide el rol (primera coincidencia; cada grupo matchea por DN completo **o por CN**, insensible a mayúsculas — cubre las variaciones de formato entre servidores). Sin coincidencias ⇒ `default_role`. El mapeo puede conceder `admin`: es decisión del admin de la plataforma y queda documentada en el panel (el equipo del directorio pasa a controlar quién es admin si así se mapea).
 
 ### 4.5 Identidad híbrida
 

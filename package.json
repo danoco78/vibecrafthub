@@ -1,7 +1,7 @@
 {
   "name": "vibecrafthub",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Plataforma para que empleados publiquen apps web internas de forma segura",
   "packageManager": "pnpm@12.15.0",
   "engines": {

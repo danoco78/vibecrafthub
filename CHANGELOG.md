@@ -2,6 +2,29 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [0.3.0] - 2026-10-23
+
+Login corporativo con LDAP/Active Directory y allowlist de dominios externos. Diseño de referencia: `docs/design-v0.3.md`.
+
+### Added
+
+- **Login corporativo LDAP/AD**: coexiste con el login local (que queda como rescate). Provisión JIT: la cuenta se crea sola al primer ingreso con el rol salido del mapeo de grupos. Modo de bind por cuenta de servicio o DN directo; filtros y atributos configurables (AD y OpenLDAP); rate limiting y sesiones idénticos al flujo local.
+- **Roles por grupos**: mapeo ordenado grupos→roles configurable por el admin (coincidencia por DN o CN, insensible a mayúsculas); el directorio manda el rol en cada entrada.
+- **Identidad híbrida**: `auth_source` por usuario — las cuentas del directorio no gestionan contraseña en la plataforma (ni cambio propio ni reset de admin) y se muestran con badge LDAP.
+- **Test de conexión**: el admin valida bind, búsqueda y autenticación paso a paso desde el panel, sin esperar un intento real de empleado.
+- **Allowlist de dominios externos**: el admin aprueba dominios exactos; las apps que los declaran en `app.json` pasan el pipeline sin hallazgos y obtienen CSP que les permite consumirlos (`connect-src`/`img-src`).
+- **CSP por app**: generada dinámicamente aprovechando el `forward_auth` existente (sin peticiones extra); quitar un dominio de la allowlist aplica al vuelo.
+- **Panel ampliado**: secciones Directorio (config + probar conexión) y Dominios externos (CRUD); badges de dominios en el detalle de cada app; badge LDAP en el listado de usuarios.
+- **`infra/smoke-ldap.sh`**: 13 pruebas contra un directorio real desechable en podman (glauth con LDAPS): test de conexión, JIT, roles, guards y 503 con directorio caído.
+
+### Security
+
+- Las contraseñas del directorio **jamás se almacenan** en la plataforma: cada login hace bind con las credenciales del empleado.
+- TLS obligatorio hacia el directorio (LDAPS o StartTLS); `tls_skip_verify` existe solo para laboratorios y queda registrado en la configuración.
+- Escape anti LDAP-injection en filtros y DNs; credenciales de la cuenta de servicio nunca expuestas (enmascaradas en el panel).
+- Quitar un dominio aprobado bloquea la próxima publicación de las apps que dependan de él (la CSP viva se recalcula al momento).
+- Usuarios del directorio: sin cambio propio ni restablecimiento de contraseña local; la desactivación manual de la plataforma sigue operando.
+
 ## [0.2.0] - 2026-10-17
 
 Data gateway (BD SQLite por app) y apps privadas con allowlist. Diseño de referencia: `docs/design-v0.2.md`.
@@ -65,5 +88,6 @@ Primera versión funcional del producto: publicación autónoma de apps web inte
 - Ninguna app publicada puede invocar la API de la plataforma (cross-origin + CSP).
 - API keys del proveedor LLM nunca expuestas en el portal (solo máscara).
 
+[0.3.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.3.0
 [0.2.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.2.0
 [0.1.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.1.0
