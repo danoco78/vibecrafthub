@@ -1,11 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type LlmConfigView, type User } from '../api';
+import { api, databaseDownloadUrl, type DbLimits, type DbOverviewRow, type LlmConfigView, type User } from '../api';
 import { useAuth } from '../App';
 
 interface Policy {
   blockSeverities: string[];
   maxBundleMb: number;
   maxFiles: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
 const SEVERITIES = [
@@ -21,6 +27,8 @@ export default function AdminPage() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [llm, setLlm] = useState<LlmConfigView | null>(null);
   const [llmApiKey, setLlmApiKey] = useState('');
+  const [dbLimits, setDbLimits] = useState<DbLimits | null>(null);
+  const [dbRows, setDbRows] = useState<DbOverviewRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -41,8 +49,41 @@ export default function AdminPage() {
       .llmConfig()
       .then((r) => setLlm(r.config))
       .catch(() => undefined);
+    api
+      .dbConfig()
+      .then((r) => setDbLimits(r.config))
+      .catch(() => undefined);
+    api
+      .dbOverview()
+      .then((r) => setDbRows(r.databases))
+      .catch(() => undefined);
   }
   useEffect(load, []);
+
+  async function saveDbLimits() {
+    if (!dbLimits) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.updateDbConfig(dbLimits);
+      setDbLimits(res.config);
+      setNotice('Límites del data gateway guardados.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
+  async function resetDatabase(slug: string, name: string) {
+    if (!window.confirm(`¿Borrar TODOS los datos de la BD de "${name}" (${slug})? La app los recreará con su código.`)) return;
+    setError(null);
+    try {
+      await api.resetDatabase(slug);
+      setNotice(`Base de datos de ${slug} reiniciada.`);
+      api.dbOverview().then((r) => setDbRows(r.databases)).catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    }
+  }
 
   async function createUser(e: FormEvent) {
     e.preventDefault();
@@ -87,7 +128,13 @@ export default function AdminPage() {
       });
       setLlm(res.config);
       setLlmApiKey('');
-      setNotice('Configuración LLM guardada.');
+      // El API corre en contenedor: 127.0.0.1/localhost apuntan al propio contenedor
+      const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(llm.baseUrl);
+      setNotice(
+        loopback
+          ? 'Configuración LLM guardada, pero OJO: la URL usa localhost/127.0.0.1 y el API corre dentro de un contenedor — así no alcanzará tu modelo. Usa http://host.containers.internal:puerto y arranca el servidor del LLM con --host 0.0.0.0.'
+          : 'Configuración LLM guardada.',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
     }
@@ -354,6 +401,127 @@ export default function AdminPage() {
           <button type="button" onClick={saveLlm}>
             Guardar revisión LLM
           </button>
+        </div>
+      )}
+
+      <h2>Bases de datos de apps</h2>
+      <p className="muted">
+        Cada app publicada tiene su propia SQLite (data gateway) con aislamiento total entre apps.
+        Descargar y reiniciar quedan en el log de auditoría.
+      </p>
+      <div className="card" style={{ padding: 0, marginBottom: 20 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>App</th>
+              <th>Slug</th>
+              <th>BD</th>
+              <th>Tamaño</th>
+              <th>Última escritura</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {dbRows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="muted">
+                  Aún no hay apps publicadas.
+                </td>
+              </tr>
+            )}
+            {dbRows.map((d) => (
+              <tr key={d.slug}>
+                <td>{d.name}</td>
+                <td className="mono">{d.slug}</td>
+                <td>
+                  {d.exists ? (
+                    <span className="badge published">Activa</span>
+                  ) : (
+                    <span className="badge info">Sin uso</span>
+                  )}
+                </td>
+                <td className="mono">{d.exists ? formatBytes(d.sizeBytes) : '—'}</td>
+                <td className="muted">{d.updatedAt ? new Date(d.updatedAt).toLocaleString() : '—'}</td>
+                <td>
+                  <div className="row-actions">
+                    <a
+                      className="btn secondary"
+                      href={databaseDownloadUrl(d.slug)}
+                      download
+                      aria-disabled={!d.exists}
+                      onClick={(e) => !d.exists && e.preventDefault()}
+                      style={!d.exists ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
+                    >
+                      Descargar
+                    </a>
+                    <button
+                      className="secondary"
+                      disabled={!d.exists}
+                      onClick={() => resetDatabase(d.slug, d.name)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {dbLimits && (
+        <div className="card">
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Límites del data gateway</h2>
+          <div className="inline">
+            <div style={{ maxWidth: 180 }}>
+              <label htmlFor="db-quota">Cuota por app (MB)</label>
+              <input
+                id="db-quota"
+                type="number"
+                min={1}
+                max={2048}
+                value={dbLimits.quotaMb}
+                onChange={(e) => setDbLimits({ ...dbLimits, quotaMb: Number(e.target.value) })}
+              />
+            </div>
+            <div style={{ maxWidth: 180 }}>
+              <label htmlFor="db-timeout">Timeout (ms)</label>
+              <input
+                id="db-timeout"
+                type="number"
+                min={100}
+                max={60000}
+                step={100}
+                value={dbLimits.timeoutMs}
+                onChange={(e) => setDbLimits({ ...dbLimits, timeoutMs: Number(e.target.value) })}
+              />
+            </div>
+            <div style={{ maxWidth: 180 }}>
+              <label htmlFor="db-rows">Máx. filas/query</label>
+              <input
+                id="db-rows"
+                type="number"
+                min={1}
+                max={10000}
+                value={dbLimits.maxRows}
+                onChange={(e) => setDbLimits({ ...dbLimits, maxRows: Number(e.target.value) })}
+              />
+            </div>
+            <div style={{ maxWidth: 220 }}>
+              <label htmlFor="db-rate">Queries/min por usuario</label>
+              <input
+                id="db-rate"
+                type="number"
+                min={1}
+                max={10000}
+                value={dbLimits.rateLimitPerMin}
+                onChange={(e) => setDbLimits({ ...dbLimits, rateLimitPerMin: Number(e.target.value) })}
+              />
+            </div>
+            <button type="button" onClick={saveDbLimits}>
+              Guardar límites
+            </button>
+          </div>
         </div>
       )}
     </div>

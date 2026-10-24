@@ -125,6 +125,15 @@ export const RULES: RegexRule[] = [
     message: 'Conexión WebSocket: canal de red persistente no supervisado.',
     fix: 'Elimina el WebSocket o solicita el dominio en el allowlist de la empresa.',
   },
+  {
+    id: 'inline-script',
+    severity: 'high',
+    exts: ['html'],
+    pattern: /<script\b(?![^>]*\bsrc\s*=)[^>]*>/i,
+    message:
+      "Bloque <script> inline: la CSP de la plataforma (script-src 'self') impide su ejecución, así que esa lógica nunca corre.",
+    fix: 'Mueve el código a un archivo .js y cárgalo con <script src="archivo.js">.',
+  },
   // ---------- medium ----------
   {
     id: 'remote-fetch',

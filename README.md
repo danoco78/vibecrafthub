@@ -2,11 +2,11 @@
 
 **English** | [Español](README.es.md)
 
-![Release](https://img.shields.io/badge/release-v0.1.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v0.2.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-56%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-96%20passing-34c98e)
 
 **Self-hosted platform that lets employees publish internal web applications autonomously and securely** — no IT tickets, no shadow IT, no open ports on desktop PCs.
 
@@ -21,10 +21,13 @@ VibeCraftHub channels that energy down a controlled path: an internal catalog wh
 ## Features
 
 - 📦 **Autonomous publishing** — the employee uploads a zip with their app (html, js, css, json, xml, optional sqlite); no IT intervention.
+- 🗄️ **Data gateway: SQLite per app** — published apps get real server-side persistence shared by their users via a SDK (`VCH.db`), fully isolated between apps, with configurable quotas and limits.
+- 🔒 **Private apps with allowlists** — the owner restricts which specific users can see and use each app; both the catalog and the app subdomain enforce it.
 - 🔍 **3-stage review pipeline** — structure (zip-slip, extensions, disguised binaries, limits), severity-graded static rules, and LLM semantic review (OpenAI-compatible or Anthropic, cloud or local). Every rejection returns a report with file, line, and suggested fix.
-- 🗂️ **Internal catalog** — apps are served from isolated subdomains with TLS, strict CSP, and mandatory session: a published app cannot call the platform API.
-- 🧾 **Full audit trail** — every publish attempt (successful or rejected) is immutably recorded, with findings, LLM provider, model, and cache stats.
-- 👥 **Lightweight administration** — local users with roles, activation/deactivation, password resets, configurable blocking-severity policy.
+- 🗂️ **Internal catalog** — apps are served from isolated subdomains with TLS, strict CSP, and mandatory session: a published app cannot call the platform API (only its own `/db/` namespace).
+- 🧾 **Full audit trail** — every publish attempt (successful or rejected) is immutably recorded, with findings, LLM provider, model, and cache stats; admin actions on databases too.
+- 👥 **Lightweight administration** — local users with roles, activation/deactivation, password resets, configurable blocking-severity policy and gateway limits.
+- 🪄 **AI assistant** — a short form in "My apps" generates the exact prompt to hand any AI the app the employee imagines, with the platform's rules already baked in.
 - 🐳 **One command** — `podman compose up -d --build` on a single VM: gateway, API, and database.
 
 ## Architecture
@@ -52,8 +55,9 @@ flowchart LR
 
 1. **Pipeline** — nothing gets published without passing structure, rules, and severity policy.
 2. **Network isolation** — each app lives on `*.apps.company.com`; `forward_auth` requires a session before serving any asset; the app domain cannot reach the platform API.
-3. **Strict CSP** — `default-src 'self'` per app inside a sandboxed iframe: even if a rule misses something, the browser blocks it at runtime.
-4. **Credential hygiene** — passwords hashed with Argon2id, httpOnly + Secure sessions, LLM API keys never exposed (masked in the admin panel).
+3. **Data isolation** — one SQLite database per app, resolved from the request `Host`: an app can never reach another app's data, not even via SQL.
+4. **Strict CSP** — `default-src 'self'` per app inside a sandboxed iframe: even if a rule misses something, the browser blocks it at runtime.
+5. **Credential hygiene** — passwords hashed with Argon2id, httpOnly + Secure sessions, LLM API keys never exposed (masked in the admin panel).
 
 ## Quick start
 
@@ -73,7 +77,7 @@ Full guides: [local operation](#local-operation-never-lose-data) · [development
 
 ### Local operation (never lose data)
 
-Data lives in named volumes (`vibecrafthub_pgdata`, `vibecrafthub_bundles`). The compose file pins its project name: stopping, starting, or recreating containers never deletes data.
+Data lives in named volumes (`vibecrafthub_pgdata`, `vibecrafthub_bundles`, `vibecrafthub_appdb`). The compose file pins its project name: stopping, starting, or recreating containers never deletes data.
 
 ```bash
 podman compose up -d          # start
@@ -95,7 +99,28 @@ pnpm dev:api                      # API on :3000 (embedded PGlite, no docker)
 pnpm dev:portal                   # portal on :5173 with hot-reload
 ```
 
-Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16).
+Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway and private apps).
+
+## Data gateway: per-app persistence
+
+Every published app gets **its own SQLite database**, shared by all its users (server-side state, no backend required). Access goes through the platform SDK, same-origin with the app:
+
+```html
+<script src="/db/sdk.js"></script>
+<script>
+  // schema is the app's responsibility
+  await VCH.db.run('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT, qty INTEGER)');
+  await VCH.db.run('INSERT INTO items (name, qty) VALUES (?, ?)', ['A4 paper', 12]);
+
+  const { rows, truncated } = await VCH.db.all('SELECT * FROM items WHERE qty > ?', [0]);
+  const item = await VCH.db.get('SELECT * FROM items WHERE name = :n', { n: 'A4 paper' });
+</script>
+```
+
+- **Statement allowlist**: `SELECT/INSERT/UPDATE/DELETE` plus table/index/view DDL. Blocked: `ATTACH`, `PRAGMA`, multi-statement.
+- **Admin-configurable limits**: quota per app (10 MB), timeout (5 s), rows per response (1,000), queries/min per user (60).
+- **Lifecycle**: data persists across app versions; deleting the app deletes its database; admins can download a copy or reset it from the panel.
+- Errors surface as `Error` with a stable `.code` (`VCH_DB_QUOTA_EXCEEDED`, `VCH_DB_RATE_LIMITED`, …).
 
 ## Bundle format
 
@@ -120,7 +145,7 @@ A zip with a mandatory `app.json` at the root:
 | Stage | What it reviews | Blocking |
 |---|---|---|
 | **1. Structure** | zip-slip, valid manifest, allowed extensions, MZ/ELF binary signatures, limits | critical |
-| **2. Static rules** | `eval`/`new Function` and embedded secrets (critical) · `innerHTML`, `document.write`, remote resources, WebSockets (high) · external `fetch`/XHR, service workers (medium) · inline handlers, `target=_blank` (low) | configurable |
+| **2. Static rules** | `eval`/`new Function` and embedded secrets (critical) · `innerHTML`, `document.write`, remote resources, WebSockets, inline `<script>`, broken HTML references to missing files, `VCH.db` usage without loading its SDK (high) · external `fetch`/XHR, service workers (medium) · inline handlers, `target=_blank` (low) | configurable |
 | **3. LLM review** | XSS, obfuscated code, data exfiltration, malicious logic — cached by file hash | configurable |
 
 The admin defines in the panel which severities block a publication and what the pipeline does when the LLM is unavailable (continue with a warning, or block).
@@ -132,6 +157,7 @@ The admin defines in the panel which severities block a publication and what the
 | `POSTGRES_PASSWORD` | `vch-cambia` | **Change it** before first start |
 | `PORTAL_HOST` | `portal.vch.local` | Portal host |
 | `APPS_WILDCARD` | `*.apps.vch.local` | Apps wildcard |
+| `APPS_HOST_SUFFIX` | `.apps.vch.local` | Host suffix used by the API to resolve apps in `/db/` |
 | `COOKIE_DOMAIN` | `.vch.local` | Session cookie domain |
 | `COOKIE_SECURE` | `1` | `0` only for plain-HTTP LAN setups |
 | `APPS_URL_TEMPLATE` | `https://{slug}.apps.vch.local:8443` | Public URL template for apps |
@@ -139,7 +165,7 @@ The admin defines in the panel which severities block a publication and what the
 ### Real domain (company.com)
 
 - Internal DNS with wildcard `*.apps.company.com` → the VM.
-- In compose: `PORTAL_HOST=portal.company.com`, `APPS_WILDCARD=*.apps.company.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.company.com`, and drop the port from `APPS_URL_TEMPLATE`.
+- In compose: `PORTAL_HOST=portal.company.com`, `APPS_WILDCARD=*.apps.company.com`, `APPS_HOST_SUFFIX=.apps.company.com`, `APPS_ROOT_TEMPLATE=/srv/bundles/{labels.3}/active`, `COOKIE_DOMAIN=.company.com`, and drop the port from `APPS_URL_TEMPLATE`.
 - Portal and apps must share the same **base domain** for the session cookie to work.
 - Replace Caddy's internal CA with real certificates if you prefer.
 
@@ -151,8 +177,8 @@ Point the base URL at your OpenAI-compatible server. From a container: `http://h
 
 | Version | Scope | Status |
 |---|---|---|
-| **v0.1** | Catalog, publish pipeline, LLM review, audit trail, administration | ✅ this release |
-| **v0.2** | Data gateway: shared per-app SQLite via SDK, private apps with allowlists | design ready |
+| **v0.1** | Catalog, publish pipeline, LLM review, audit trail, administration | ✅ |
+| **v0.2** | Data gateway: shared per-app SQLite via SDK, private apps with allowlists | ✅ this release |
 | **v0.3** | LDAP/Active Directory connector, external domain allowlist | |
 | **v1.0** | Usage metrics, audit export, multi-replica hardening | |
 

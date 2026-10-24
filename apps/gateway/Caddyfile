@@ -31,6 +31,12 @@
 		uri /api/auth/check
 	}
 
+	# Data gateway (v0.2): la app consulta SU SQLite vía /db/* en su propio
+	# subdominio (same-origin). El API resuelve la app por el Host header.
+	handle /db/* {
+		reverse_proxy api:3000
+	}
+
 	header {
 		-Server
 		X-Content-Type-Options nosniff

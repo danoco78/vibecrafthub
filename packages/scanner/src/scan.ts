@@ -1,6 +1,8 @@
 import { type AppManifest, type Finding, type Policy, blocksPublish } from '@vch/shared';
 import type { BundleEntry } from './types.js';
 import { RULES } from './rules.js';
+import { checkReferences } from './references.js';
+import { checkSdkUsage } from './sdk.js';
 import { validateStructure, type Limits } from './structure.js';
 
 const TEXT_EXTENSIONS = new Set(['html', 'js', 'css', 'json', 'xml']);
@@ -63,6 +65,12 @@ export function scanBundle(entries: BundleEntry[], policy: Policy): ScanResult {
       }
     }
   }
+
+  // Referencias locales rotas: html que apunta a archivos ausentes del zip.
+  findings.push(...checkReferences(entries));
+
+  // Uso de VCH.db sin cargar /db/sdk.js: persistencia rota (o silenciosa).
+  findings.push(...checkSdkUsage(entries));
 
   // Dominios externos declarados: la allowlist global llega en v2,
   // así que cualquier dominio externo genera hallazgo alto.

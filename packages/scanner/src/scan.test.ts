@@ -165,3 +165,117 @@ test('innerHTML y fetch externo se reportan', () => {
   assert.ok(findings.some((f) => f.rule === 'remote-fetch'));
   assert.ok(findings.some((f) => f.rule === 'remote-image'));
 });
+
+test('rechaza referencias a archivos que no vienen en el bundle (caso real: app generada con IA)', () => {
+  // El HTML referencia js/app.js y css/style.css pero el zip solo trajo index.html
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        [
+          '<!doctype html><html><head>',
+          '<link rel="stylesheet" href="css/style.css">',
+          '<script src="/db/sdk.js"></script>',
+          '<script src="js/app.js"></script>',
+          '</head><body></body></html>',
+        ].join('\n'),
+      ),
+    ],
+    POLICY,
+  );
+  const missing = findings.filter((f) => f.rule === 'missing-referenced-file');
+  assert.equal(missing.length, 2, `esperaba 2 referencias rotas, hubo: ${findings.map((f) => f.rule).join(', ')}`);
+  assert.ok(missing.every((f) => f.severity === 'high'));
+  assert.ok(missing.some((f) => f.file === 'index.html' && f.line === 2 && f.message.includes('css/style.css')));
+  assert.ok(missing.some((f) => f.file === 'index.html' && f.line === 4 && f.message.includes('js/app.js')));
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+  // el SDK de la plataforma (/db/sdk.js) NO es una referencia rota
+  assert.ok(!missing.some((f) => f.message.includes('/db/sdk.js')));
+});
+
+test('referencias existentes con rutas relativas no generan hallazgos', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><link rel="stylesheet" href="./css/style.css"></head><body><a href="ayuda.html">?</a></body></html>'),
+      entry('css/style.css', 'body{}'),
+      entry('ayuda.html', '<html></html>'),
+      entry('pages/detalle.html', '<html><head><script src="../js/util.js"></script></head></html>'),
+      entry('js/util.js', 'x'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((f) => f.rule === 'missing-referenced-file'), JSON.stringify(findings));
+});
+
+test('favicon inexistente no se reporta (extensión no permitida)', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><link rel="icon" href="favicon.ico"></head><body></body></html>'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((f) => f.rule === 'missing-referenced-file'));
+});
+
+test('script inline genera hallazgo alto (la CSP lo bloquea)', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        ['<html><body>', '<script>console.log("muerto por CSP");</script>', '<script src="app.js"></script>', '</body></html>'].join('\n'),
+      ),
+      entry('app.js', 'console.log("vivo");'),
+    ],
+    POLICY,
+  );
+  const inline = findings.filter((f) => f.rule === 'inline-script');
+  assert.equal(inline.length, 1);
+  assert.equal(inline[0].severity, 'high');
+  assert.equal(inline[0].line, 2);
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+});
+
+test('usa VCH.db sin cargar /db/sdk.js → hallazgo alto (caso To-Do 1.1.0)', () => {
+  // Patrón real: app.js con degradación silenciosa, index.html sin el SDK
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry('index.html', '<html><head><script src="js/app.js" defer></script></head><body></body></html>'),
+      entry(
+        'js/app.js',
+        [
+          'function db() {',
+          "  return (typeof VCH !== 'undefined' && VCH && VCH.db) ? VCH.db : null;",
+          '}',
+          'await VCH.db.run("CREATE TABLE t (id INTEGER)");',
+        ].join('\n'),
+      ),
+    ],
+    POLICY,
+  );
+  const f = findings.find((x) => x.rule === 'vch-sdk-not-loaded');
+  assert.ok(f, 'debe detectar uso de VCH.db sin SDK cargado');
+  assert.equal(f.severity, 'high');
+  assert.equal(f.file, 'js/app.js');
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+});
+
+test('VCH.db con /db/sdk.js cargado no genera hallazgo', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.json', VALID_MANIFEST),
+      entry(
+        'index.html',
+        '<html><head><script src="/db/sdk.js"></script><script src="js/app.js" defer></script></head><body></body></html>',
+      ),
+      entry('js/app.js', 'await VCH.db.run("CREATE TABLE t (id INTEGER)");'),
+    ],
+    POLICY,
+  );
+  assert.ok(!findings.some((x) => x.rule === 'vch-sdk-not-loaded'), JSON.stringify(findings));
+  assert.equal(verdictFromFindings(findings, POLICY), 'published');
+});

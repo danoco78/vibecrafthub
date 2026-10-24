@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { api, type Attempt } from '../api';
+import { useAuth } from '../App';
 
 export default function HistoryPage() {
+  const { user } = useAuth();
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (user?.role === 'user') return; // el guard de ruta ya redirige
     api
       .attempts()
       .then((r) => setAttempts(r.attempts))
       .catch((e) => setError(e instanceof Error ? e.message : 'Error'));
-  }, []);
+  }, [user?.role]);
+
+  // El historial es solo para admin y developer (la API también lo exige).
+  if (user?.role === 'user') return <Navigate to="/" replace />;
 
   return (
     <div>

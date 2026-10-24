@@ -31,6 +31,11 @@ export default function CatalogPage() {
             <div className="meta">
               <span className="mono">{a.slug}</span>
               {a.current_version && <span>v{a.current_version}</span>}
+              {a.visibility === 'private' && (
+                <span className="badge info" title="App privada: requiere allowlist">
+                  🔒 Privada
+                </span>
+              )}
               <span>por {a.owner_email}</span>
             </div>
             {a.description && <p style={{ margin: 0, fontSize: 14 }}>{a.description}</p>}

@@ -133,6 +133,19 @@ export const api = {
       body: JSON.stringify({ name, description }),
     }),
   getApp: (slug: string) => request<{ app: AppInfo }>(`/api/apps/${slug}`),
+  updateApp: (slug: string, patch: { visibility?: 'public' | 'private'; description?: string }) =>
+    request<{ app: AppInfo }>(`/api/apps/${slug}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  members: (slug: string) =>
+    request<{ members: { user_id: number; email: string; added_at: string }[] }>(
+      `/api/apps/${slug}/members`,
+    ),
+  addMember: (slug: string, email: string) =>
+    request<{ member: { user_id: number; email: string } }>(`/api/apps/${slug}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  removeMember: (slug: string, userId: number) =>
+    request<{ ok: boolean }>(`/api/apps/${slug}/members/${userId}`, { method: 'DELETE' }),
   versions: (slug: string) => request<{ versions: Version[] }>(`/api/apps/${slug}/versions`),
   activate: (slug: string, id: number) =>
     request<{ ok: boolean }>(`/api/apps/${slug}/versions/${id}/activate`, { method: 'POST' }),
@@ -185,4 +198,37 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(c),
     }),
+
+  dbConfig: () => request<{ config: DbLimits }>('/api/db-config'),
+  updateDbConfig: (config: DbLimits) =>
+    request<{ config: DbLimits }>('/api/db-config', { method: 'PUT', body: JSON.stringify(config) }),
+  dbOverview: () => request<{ databases: DbOverviewRow[] }>('/api/admin/db-overview'),
+  appDatabase: (slug: string) =>
+    request<{ database: { slug: string; exists: boolean; sizeBytes: number; updatedAt: string | null } }>(
+      `/api/admin/apps/${slug}/database`,
+    ),
+  resetDatabase: (slug: string) =>
+    request<{ ok: boolean }>(`/api/admin/apps/${slug}/database/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    }),
 };
+
+export interface DbLimits {
+  quotaMb: number;
+  timeoutMs: number;
+  maxRows: number;
+  rateLimitPerMin: number;
+}
+
+export interface DbOverviewRow {
+  slug: string;
+  name: string;
+  exists: boolean;
+  sizeBytes: number;
+  updatedAt: string | null;
+}
+
+export function databaseDownloadUrl(slug: string): string {
+  return `/api/admin/apps/${slug}/database/download`;
+}

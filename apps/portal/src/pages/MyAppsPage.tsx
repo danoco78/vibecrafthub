@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type AppInfo } from '../api';
 import { useAuth } from '../App';
+import PromptWizard from '../components/PromptWizard';
 
 export default function MyAppsPage() {
   const { user } = useAuth();
@@ -9,6 +10,7 @@ export default function MyAppsPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
 
   function load() {
     api
@@ -48,7 +50,12 @@ export default function MyAppsPage() {
       {error && <div className="banner err">{error}</div>}
 
       <form className="card" onSubmit={create}>
-        <h2 style={{ marginTop: 0 }}>Nueva aplicación</h2>
+        <div className="inline" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>Nueva aplicación</h2>
+          <button type="button" className="secondary" onClick={() => setShowWizard(true)} title="Genera el prompt para pedirle la app a tu IA">
+            🪄 ¿Cómo crear mis apps?
+          </button>
+        </div>
         <div className="inline">
           <div style={{ flex: 1, minWidth: 220 }}>
             <label htmlFor="app-name">Nombre</label>
@@ -104,6 +111,8 @@ export default function MyAppsPage() {
         ))}
       </div>
       {apps.length === 0 && <div className="card muted">Crea tu primera aplicación arriba.</div>}
+
+      {showWizard && <PromptWizard onClose={() => setShowWizard(false)} />}
     </div>
   );
 }
