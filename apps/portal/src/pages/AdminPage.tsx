@@ -3,6 +3,7 @@ import { api, databaseDownloadUrl, type DbLimits, type DbOverviewRow, type LlmCo
 import { useAuth } from '../App';
 import LdapSection from '../components/LdapSection';
 import DomainsSection from '../components/DomainsSection';
+import MetricsSection from '../components/MetricsSection';
 
 interface Policy {
   blockSeverities: string[];
@@ -162,6 +163,8 @@ export default function AdminPage() {
       <h1>Administración</h1>
       {error && <div className="banner err">{error}</div>}
       {notice && <div className="banner ok">{notice}</div>}
+
+      <MetricsSection />
 
       <h2>Usuarios</h2>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>

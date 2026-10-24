@@ -215,8 +215,10 @@ export const api = {
       body: JSON.stringify({ confirm: true }),
     }),
 
-  ldapConfig: () => request<{ config: LdapConfigView }>('/api/ldap-config'),
-  updateLdapConfig: (c: Omit<LdapConfigView, 'bindPasswordMasked'> & { bindPassword?: string }) =>
+  metrics: (days: number) =>
+    request<MetricsView>(`/api/admin/metrics?days=${days}`),
+
+  ldapConfig: () => request<{ config: LdapConfigView }>('/api/ldap-config'),  updateLdapConfig: (c: Omit<LdapConfigView, 'bindPasswordMasked'> & { bindPassword?: string }) =>
     request<{ config: LdapConfigView }>('/api/ldap-config', { method: 'PUT', body: JSON.stringify(c) }),
   testLdap: (login?: string, password?: string) =>
     request<LdapTestResult>('/api/ldap-config/test', {
@@ -279,4 +281,18 @@ export interface LdapTestResult {
   steps: { step: string; ok: boolean; detail: string }[];
   role?: string;
   email?: string;
+}
+
+export interface MetricsView {
+  days: number;
+  summary: {
+    loginOkLocal: number;
+    loginOkLdap: number;
+    loginFail: number;
+    publishOk: number;
+    publishRejected: number;
+    dbQueries: number;
+    appAccess: number;
+  };
+  apps: { slug: string; access: number; dbQueries: number; publishOk: number; publishRejected: number }[];
 }

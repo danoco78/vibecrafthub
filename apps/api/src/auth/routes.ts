@@ -8,7 +8,6 @@ import { hashPassword, validatePasswordStrength, verifyPassword } from './passwo
 import { authenticateWithLdap, LdapInvalidCredentialsError } from './ldap.js';
 import { loadLdapConfig } from '../ldap/settings.js';
 import { count } from '../metrics/collector.js';
-import { count } from '../metrics/collector.js';
 import {
   COOKIE_OPTS_KEY,
   SESSION_COOKIE,
