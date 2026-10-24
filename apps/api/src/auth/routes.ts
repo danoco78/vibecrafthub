@@ -7,6 +7,7 @@ import { buildAppCsp, resolveApprovedDomains } from '../domains/csp.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwords.js';
 import { authenticateWithLdap, LdapInvalidCredentialsError } from './ldap.js';
 import { loadLdapConfig } from '../ldap/settings.js';
+import { count } from '../metrics/collector.js';
 import {
   COOKIE_OPTS_KEY,
   SESSION_COOKIE,
@@ -156,6 +157,7 @@ export function authRoutes(
         result = await authenticateWithLdap(ldapCfg, email, parsed.data.password);
       } catch (err) {
         if (err instanceof LdapInvalidCredentialsError) {
+          count('login.fail', 'ldap');
           recordLoginFailure(rateKey);
           return reply.code(401).send({ error: 'Credenciales incorrectas.' });
         }
@@ -188,6 +190,7 @@ export function authRoutes(
         account = { id: user.id, email: user.email, role: result.role, active: true };
       }
       clearLoginFailures(rateKey);
+      count('login.ok', 'ldap');
       const session = await createSession(db, account.id, sessionTtlDays);
       setSessionCookie(reply, session.token, session.expiresAt, {
         domain: app.cookieOpts?.domain,
@@ -197,15 +200,18 @@ export function authRoutes(
     }
 
     if (!user) {
+      count('login.fail', 'local');
       recordLoginFailure(rateKey);
       return reply.code(401).send({ error: 'Credenciales incorrectas.' });
     }
     const ok = await verifyPassword(user.password_hash, parsed.data.password);
     if (!ok) {
+      count('login.fail', 'local');
       recordLoginFailure(rateKey);
       return reply.code(401).send({ error: 'Credenciales incorrectas.' });
     }
     clearLoginFailures(rateKey);
+    count('login.ok', 'local');
     const session = await createSession(db, user.id, sessionTtlDays);
     setSessionCookie(reply, session.token, session.expiresAt, {
       domain: app.cookieOpts?.domain,

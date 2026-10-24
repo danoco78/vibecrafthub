@@ -15,6 +15,7 @@ import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
 import { domainsRoutes } from './domains/routes.js';
 import { buildAppCsp, resolveApprovedDomains } from './domains/csp.js';
+import { flushMetrics, startMetricFlusher } from './metrics/collector.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -93,9 +94,22 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
 
 async function main(): Promise<void> {
   const cfg = configFromEnv();
-  const { app } = await buildApp(cfg);
+  const { app, db } = await buildApp(cfg);
   const mode = cfg.databaseUrl ? 'postgres' : 'pglite (dev)';
   app.log.info(`arrancando con driver: ${mode}`);
+  startMetricFlusher(db);
+
+  // Flush de métricas pendientes antes de salir (SIGTERM/SIGINT).
+  let closing = false;
+  const shutdown = async (signal: string): Promise<void> => {
+    if (closing) return;
+    closing = true;
+    await flushMetrics(db).catch(() => undefined);
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+
   await app.listen({ port: cfg.port, host: cfg.host });
 }
 
