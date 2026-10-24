@@ -13,6 +13,7 @@ import { adminRoutes } from './admin/routes.js';
 import { AppDbRegistry } from './datagateway/connections.js';
 import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
+import { domainsRoutes } from './domains/routes.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -41,6 +42,7 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   adminRoutes(app, db);
   datagatewayRoutes(app, db, cfg);
   datagatewayAdminRoutes(app, db);
+  domainsRoutes(app, db);
 
   // Servir bundles directamente (modo dev sin gateway; producción lo hace Caddy con forward_auth).
   if (!cfg.databaseUrl) {
