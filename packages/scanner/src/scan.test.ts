@@ -142,6 +142,72 @@ test('dominios externos sin allowlist generan hallazgo alto', () => {
   assert.ok(findings.some((f) => f.rule === 'manifest-external-domains' && f.severity === 'high'));
 });
 
+test('allowlist: dominio aprobado pasa sin hallazgo (declarado y en reglas remote)', () => {
+  const { findings } = scanBundle(
+    [
+      entry(
+        'app.json',
+        JSON.stringify({
+          name: 'd',
+          version: '1.0.0',
+          entrypoint: 'index.html',
+          externalDomains: ['HTTPS://Api.Empresa.com:8443/ruta'], // se normaliza a api.empresa.com
+        }),
+      ),
+      entry(
+        'index.html',
+        '<html><body><img src="https://api.empresa.com/logo.png"></body></html>',
+      ),
+      entry('app.js', "fetch('https://api.empresa.com/v1/datos');\nnew WebSocket('wss://api.empresa.com/ws');"),
+    ],
+    POLICY,
+    ['api.empresa.com'], // allowlist del admin
+  );
+  assert.deepEqual(findings, [], `no debía haber hallazgos: ${JSON.stringify(findings)}`);
+  assert.equal(verdictFromFindings(findings, POLICY), 'published');
+});
+
+test('allowlist: dominio no aprobado genera hallazgo con mensaje accionable', () => {
+  const { findings } = scanBundle(
+    [
+      entry(
+        'app.json',
+        JSON.stringify({
+          name: 'd',
+          version: '1.0.0',
+          entrypoint: 'index.html',
+          externalDomains: ['api.empresa.com', 'raro con espacios'],
+        }),
+      ),
+      entry('app.js', "fetch('https://otros.ejemplo.com/v1');"),
+    ],
+    POLICY,
+    ['api.empresa.com'],
+  );
+  const domainFindings = findings.filter((f) => f.rule === 'manifest-external-domains');
+  assert.equal(domainFindings.length, 1, 'solo el dominio no aprobado (y el inválido) genera hallazgo');
+  assert.ok(domainFindings[0].message.includes('otros.ejemplo.com') || domainFindings[0].message.includes('raro'));
+  // el fetch a un dominio NO aprobado sigue reportándose
+  assert.ok(findings.some((f) => f.rule === 'remote-fetch'));
+  assert.equal(verdictFromFindings(findings, POLICY), 'rejected');
+});
+
+test('allowlist vacía: comportamiento previo intacto', () => {
+  const { findings } = scanBundle(
+    [
+      entry('app.js', "fetch('https://api.empresa.com/v1');"),
+      entry('index.html', '<html></html>'),
+      entry(
+        'app.json',
+        JSON.stringify({ name: 'd', version: '1.0.0', entrypoint: 'index.html' }),
+      ),
+    ],
+    POLICY,
+    [],
+  );
+  assert.ok(findings.some((f) => f.rule === 'remote-fetch'));
+});
+
 test('límite de archivos aplica', () => {
   const entries: BundleEntry[] = [
     entry('app.json', VALID_MANIFEST),

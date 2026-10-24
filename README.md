@@ -2,11 +2,11 @@
 
 **English** | [Español](README.es.md)
 
-![Release](https://img.shields.io/badge/release-v0.2.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v0.3.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-96%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-115%20passing-34c98e)
 
 **Self-hosted platform that lets employees publish internal web applications autonomously and securely** — no IT tickets, no shadow IT, no open ports on desktop PCs.
 
@@ -21,6 +21,8 @@ VibeCraftHub channels that energy down a controlled path: an internal catalog wh
 ## Features
 
 - 📦 **Autonomous publishing** — the employee uploads a zip with their app (html, js, css, json, xml, optional sqlite); no IT intervention.
+- 🔑 **Corporate LDAP/AD login** — employees sign in with their directory credentials; the account is created at first sign-in and the role comes from group mapping. Local login stays as a rescue path.
+- 🌐 **External domain allowlist** — admins approve domains; apps declaring them pass the pipeline and get CSP to reach them.
 - 🗄️ **Data gateway: SQLite per app** — published apps get real server-side persistence shared by their users via a SDK (`VCH.db`), fully isolated between apps, with configurable quotas and limits.
 - 🔒 **Private apps with allowlists** — the owner restricts which specific users can see and use each app; both the catalog and the app subdomain enforce it.
 - 🔍 **3-stage review pipeline** — structure (zip-slip, extensions, disguised binaries, limits), severity-graded static rules, and LLM semantic review (OpenAI-compatible or Anthropic, cloud or local). Every rejection returns a report with file, line, and suggested fix.
@@ -28,6 +30,7 @@ VibeCraftHub channels that energy down a controlled path: an internal catalog wh
 - 🧾 **Full audit trail** — every publish attempt (successful or rejected) is immutably recorded, with findings, LLM provider, model, and cache stats; admin actions on databases too.
 - 👥 **Lightweight administration** — local users with roles, activation/deactivation, password resets, configurable blocking-severity policy and gateway limits.
 - 🪄 **AI assistant** — a short form in "My apps" generates the exact prompt to hand any AI the app the employee imagines, with the platform's rules already baked in.
+- 🏗️ **Hardened pipeline** — the scanner detects inline `<script>` blocked by CSP, references to missing zip files, and SDK usage without loading it; every rejection reports file and line.
 - 🐳 **One command** — `podman compose up -d --build` on a single VM: gateway, API, and database.
 
 ## Architecture
@@ -99,7 +102,7 @@ pnpm dev:api                      # API on :3000 (embedded PGlite, no docker)
 pnpm dev:portal                   # portal on :5173 with hot-reload
 ```
 
-Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway and private apps).
+Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway and private apps), `infra/smoke-ldap.sh` (13, corporate login against a disposable real directory; requires podman).
 
 ## Data gateway: per-app persistence
 
@@ -169,6 +172,26 @@ The admin defines in the panel which severities block a publication and what the
 - Portal and apps must share the same **base domain** for the session cookie to work.
 - Replace Caddy's internal CA with real certificates if you prefer.
 
+### Corporate login (LDAP / Active Directory)
+
+Configure it in Admin → Corporate directory. Requirements: a server with **LDAPS or StartTLS** (encryption mandatory).
+
+1. Service account (bind DN + password) or direct DN pattern; configurable search filter (`(mail={login})` on AD, `(uid={login})` on OpenLDAP).
+2. Ordered group → role mapping (e.g. `cn=developers` → developer; everyone else → user).
+3. **Test connection** validates bind, search, and authentication step by step before you enable it.
+
+Employees sign in with their directory credentials: the account is created automatically at first sign-in (JIT provisioning) and their password is always managed in the directory, never in the platform. Local login remains as the admin rescue path.
+
+### External domains
+
+By default an app cannot reach anything outside itself. If it needs an internal API:
+
+1. The developer declares the domain in `app.json` (`externalDomains`).
+2. The admin approves it in Admin → External domains.
+3. The app passes the pipeline and its CSP opens `connect-src`/`img-src` toward that domain — and only that one.
+
+Removing an approved domain blocks the next publish of the apps that use it (already-published ones keep working until then).
+
 ### Local LLM
 
 Point the base URL at your OpenAI-compatible server. From a container: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp, or vLLM. Your code never leaves the company.
@@ -179,7 +202,7 @@ Point the base URL at your OpenAI-compatible server. From a container: `http://h
 |---|---|---|
 | **v0.1** | Catalog, publish pipeline, LLM review, audit trail, administration | ✅ |
 | **v0.2** | Data gateway: shared per-app SQLite via SDK, private apps with allowlists | ✅ this release |
-| **v0.3** | LDAP/Active Directory connector, external domain allowlist | |
+| **v0.3** | LDAP/Active Directory connector, external domain allowlist | ✅ this release |
 | **v1.0** | Usage metrics, audit export, multi-replica hardening | |
 
 ## License

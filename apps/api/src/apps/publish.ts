@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import yauzl from 'yauzl';
 import { type BundleEntry, scanBundle, verdictFromFindings } from '@vch/scanner';
-import { APP_MANIFEST_FILENAME, blocksPublish, countBySeverity, type Finding, type Policy } from '@vch/shared';
+import { APP_MANIFEST_FILENAME, blocksPublish, countBySeverity, normalizeDomainList, type Finding, type Policy } from '@vch/shared';
 import type { DbClient } from '../db.js';
 import { extractBundle, setActiveVersion } from './storage.js';
 import { loadLlmConfig, reviewBundleWithLlm } from '../llm.js';
+import { loadExternalAllowlist } from '../domains/allowlist.js';
+import { invalidateDomainCaches } from '../domains/csp.js';
 
 interface AppRow {
   id: number;
@@ -142,8 +144,9 @@ export async function publishBundle(
     return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash);
   }
 
-  // --- Scanner: estructura + reglas ---
-  const scan = scanBundle(entries, policy);
+  // --- Scanner: estructura + reglas (con la allowlist de dominios del admin) ---
+  const externalAllowlist = await loadExternalAllowlist(db);
+  const scan = scanBundle(entries, policy, externalAllowlist);
   findings.push(...scan.findings);
 
   const manifest = scan.manifest;
@@ -212,14 +215,16 @@ export async function publishBundle(
   await fs.rm(destRoot, { recursive: true, force: true });
   await extractBundle(entries, destRoot);
   await setActiveVersion(bundlesDir, app.slug, version);
+  invalidateDomainCaches(); // la nueva versión puede declarar otros dominios
 
   const previous = await db.query<{ id: number }>(
     "SELECT id FROM app_versions WHERE app_id = $1 AND status = 'active'",
     [app.id],
   );
   const inserted = await db.query<{ id: number }>(
-    "INSERT INTO app_versions (app_id, version, bundle_hash, status) VALUES ($1, $2, $3, 'active') RETURNING id",
-    [app.id, version, bundleHash],
+    `INSERT INTO app_versions (app_id, version, bundle_hash, status, external_domains)
+     VALUES ($1, $2, $3, 'active', $4::jsonb) RETURNING id`,
+    [app.id, version, bundleHash, JSON.stringify(normalizeDomainList(manifest.externalDomains ?? []))],
   );
   const versionId = inserted.rows[0].id;
   for (const prev of previous.rows) {

@@ -2,11 +2,11 @@
 
 [English](README.md) | **Español**
 
-![Release](https://img.shields.io/badge/release-v0.2.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v0.3.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-96%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-115%20passing-34c98e)
 ![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
 **Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
@@ -22,6 +22,8 @@ VibeCraftHub canaliza esa energía por un camino controlado: un catálogo intern
 ## Características
 
 - 📦 **Publicación autónoma** — el empleado sube un zip con su app (html, js, css, json, xml, sqlite opcional); sin intervención de TI.
+- 🔑 **Login corporativo LDAP/AD** — los empleados entran con sus credenciales del directorio; la cuenta se crea sola al primer ingreso y el rol sale del mapeo de grupos. El login local queda como rescate.
+- 🌐 **Allowlist de dominios externos** — el admin aprueba dominios; las apps que los declaran pasan el pipeline y obtienen CSP para consumirlos.
 - 🗄️ **Data gateway: BD SQLite por app** — las apps tienen persistencia real compartida entre sus usuarios vía SDK (`VCH.db`), aislada por completo entre apps, con cuota y límites configurables.
 - 🔒 **Apps privadas con allowlist** — el dueño restringe qué usuarios concretos pueden ver y usar cada app; catálogo y subdominio hacen enforcement.
 - 🔍 **Pipeline de revisión en 3 etapas** — estructura (zip-slip, extensiones, binarios disfrazados, límites), reglas estáticas con severidades y revisión semántica con LLM (OpenAI-compatible o Anthropic, cloud o local). Cada rechazo entrega un reporte con archivo, línea y corrección sugerida.
@@ -29,6 +31,7 @@ VibeCraftHub canaliza esa energía por un camino controlado: un catálogo intern
 - 🧾 **Auditoría completa** — todo intento de publicación (exitoso o rechazado) queda registrado e inmutable, con hallazgos, proveedor LLM, modelo y caché; las acciones de admin sobre BDs también.
 - 👥 **Gestión ligera** — usuarios locales con roles, activación/desactivación, reset de contraseñas, política de severidades bloqueante y límites del gateway configurables.
 - 🪄 **Asistente para IA** — un formulario en «Mis apps» genera el prompt exacto para pedirle a cualquier IA la app que el empleado imagina, con las reglas de la plataforma ya integradas.
+- 🏗️ **Endurecimiento del pipeline** — el scanner detecta `<script>` inline que la CSP bloquea, referencias a archivos ausentes del zip y uso del SDK sin cargarlo; cada rechazo dice archivo y línea.
 - 🐳 **Un solo comando** — `podman compose up -d --build` en una VM: gateway, API y base de datos.
 
 ## Arquitectura
@@ -100,7 +103,7 @@ pnpm dev:api                      # API en :3000 (PGlite embebida, sin docker)
 pnpm dev:portal                   # portal en :5173 con hot-reload
 ```
 
-Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway y apps privadas).
+Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway y apps privadas), `infra/smoke-ldap.sh` (13, login corporativo con directorio real desechable; requiere podman).
 
 ## Data gateway: persistencia por app
 
@@ -169,6 +172,26 @@ El admin define en el panel qué severidades bloquean y qué hace el pipeline si
 - Portal y apps deben compartir **dominio base** para que la cookie de sesión funcione.
 - Sustituye la CA interna de Caddy por certificados reales si lo prefieres.
 
+### Login corporativo (LDAP / Active Directory)
+
+Configúralo en Admin → Directorio corporativo. Requisitos: servidor con **LDAPS o StartTLS** (cifrado obligatorio).
+
+1. Cuenta de servicio (bind DN + contraseña) o DN directo; filtro de búsqueda configurable (`(mail={login})` en AD, `(uid={login})` en OpenLDAP).
+2. Mapeo ordenado de grupos → roles (ej.: `cn=desarrolladores` → developer; resto → user).
+3. **Probar conexión** valida bind, búsqueda y autenticación paso a paso antes de activar.
+
+Los empleados entran con sus credenciales del directorio: la cuenta se crea sola al primer ingreso (provisión JIT) y su contraseña se gestiona siempre en el directorio, nunca en la plataforma. El login local queda como rescate para el admin.
+
+### Dominios externos
+
+Por defecto una app no puede contactar nada fuera de sí misma. Si necesita una API interna:
+
+1. El developer declara el dominio en `app.json` (`externalDomains`).
+2. El admin lo aprueba en Admin → Dominios externos.
+3. La app pasa el pipeline y su CSP abre `connect-src`/`img-src` hacia ese dominio — solo hacia él.
+
+Quitar un dominio aprobado bloquea la próxima publicación de las apps que lo usen (las ya publicadas siguen funcionando hasta entonces).
+
 ### LLM local
 
 Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp o vLLM. El código nunca sale de la empresa.
@@ -179,7 +202,7 @@ Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://ho
 |---|---|---|
 | **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ |
 | **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | ✅ esta release |
-| **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | |
+| **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | ✅ esta release |
 | **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | |
 
 ## Licencia

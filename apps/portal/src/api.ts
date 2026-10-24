@@ -3,6 +3,7 @@ export interface User {
   email: string;
   role: 'admin' | 'developer' | 'user';
   active?: boolean;
+  auth_source?: 'local' | 'ldap';
 }
 
 export interface AppInfo {
@@ -14,6 +15,7 @@ export interface AppInfo {
   visibility: 'public' | 'private';
   owner_email: string;
   current_version: string | null;
+  externalDomains?: { declared: string; approved: boolean }[];
 }
 
 export interface Version {
@@ -212,6 +214,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ confirm: true }),
     }),
+
+  ldapConfig: () => request<{ config: LdapConfigView }>('/api/ldap-config'),
+  updateLdapConfig: (c: Omit<LdapConfigView, 'bindPasswordMasked'> & { bindPassword?: string }) =>
+    request<{ config: LdapConfigView }>('/api/ldap-config', { method: 'PUT', body: JSON.stringify(c) }),
+  testLdap: (login?: string, password?: string) =>
+    request<LdapTestResult>('/api/ldap-config/test', {
+      method: 'POST',
+      body: JSON.stringify({ login, password }),
+    }),
+  externalDomains: () =>
+    request<{ domains: { domain: string; note: string; created_at: string }[] }>(
+      '/api/admin/external-domains',
+    ),
+  addExternalDomain: (domain: string, note: string) =>
+    request<{ domain: string }>('/api/admin/external-domains', {
+      method: 'POST',
+      body: JSON.stringify({ domain, note }),
+    }),
+  removeExternalDomain: (domain: string) =>
+    request<{ ok: boolean }>(`/api/admin/external-domains/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+    }),
 };
 
 export interface DbLimits {
@@ -231,4 +255,28 @@ export interface DbOverviewRow {
 
 export function databaseDownloadUrl(slug: string): string {
   return `/api/admin/apps/${slug}/database/download`;
+}
+
+export interface LdapConfigView {
+  enabled: boolean;
+  mode: 'ldaps' | 'starttls';
+  url: string;
+  baseDn: string;
+  bindMode: 'service' | 'direct';
+  bindDn: string;
+  bindPasswordMasked: string;
+  userDnPattern: string;
+  userFilter: string;
+  mailAttr: string;
+  groupAttr: string;
+  tlsSkipVerify: boolean;
+  roleMappings: { group: string; role: 'admin' | 'developer' | 'user' }[];
+  defaultRole: 'admin' | 'developer' | 'user';
+}
+
+export interface LdapTestResult {
+  ok: boolean;
+  steps: { step: string; ok: boolean; detail: string }[];
+  role?: string;
+  email?: string;
 }

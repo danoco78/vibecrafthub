@@ -33,8 +33,8 @@ export const appManifestSchema = z.object({
     .optional(),
   /**
    * Dominios externos que la app necesita contactar.
-   * Deben estar incluidos en el allowlist global de la empresa (v2);
-   * mientras no exista allowlist configurada, cualquier dominio genera hallazgo bloqueante.
+   * El scanner los compara con la allowlist del admin (v0.3): aprobados pasan
+   * sin hallazgo (y habilitan CSP por app); los demás generan hallazgo alto.
    */
   externalDomains: z.array(z.string().min(1).max(253)).max(16).optional(),
 });

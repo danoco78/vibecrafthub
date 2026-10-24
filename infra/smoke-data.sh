@@ -199,6 +199,30 @@ done
 expect_eq "4ª query en el minuto → 429" "$RL" "429"
 db_put_config '{"quotaMb":10,"timeoutMs":5000,"maxRows":1000,"rateLimitPerMin":60}' >/dev/null
 
+echo "== CSP por app (dominios aprobados, v0.3) =="
+curl -s -b "$JAR_ADMIN" -H 'Content-Type: application/json' \
+  -d '{"domain":"api.empresa.com","note":"API interna"}' "$BASE/api/admin/external-domains" >/dev/null
+SLUG_C=$(curl -s -b "$JAR_DEV" -H 'Content-Type: application/json' \
+  -d '{"name":"Cliente API Interna"}' "$BASE/api/apps" | json_field "d['app']['slug']")
+mkdir -p "$TMP/appc"
+printf '%s' '{"name":"Cliente API Interna","version":"1.0.0","entrypoint":"index.html","externalDomains":["HTTPS://Api.Empresa.com:8443/api"]}' > "$TMP/appc/app.json"
+printf '%s' '<!doctype html><html><body></body></html>' > "$TMP/appc/index.html"
+printf '%s' "fetch('https://api.empresa.com/v1');" > "$TMP/appc/app.js"
+python3 - <<PYEOF
+import zipfile
+z = zipfile.ZipFile("$TMP/appc.zip", "w")
+for n in ("app.json", "index.html", "app.js"):
+    z.write("$TMP/appc/" + n, n)
+z.close()
+PYEOF
+PUBC=$(curl -s -b "$JAR_DEV" -F "bundle=@$TMP/appc.zip" "$BASE/api/apps/$SLUG_C/publish")
+expect_eq "app con dominio aprobado publica sin hallazgos de dominio" \
+  "$(echo "$PUBC" | json_field "d['verdict'] + ' ' + str(sum(1 for f in d['findings'] if f['rule']=='manifest-external-domains'))")" "published 0"
+CSP_C=$(curl -s -D- -o /dev/null -b "$JAR_DEV" "$BASE/bundles/$SLUG_C/index.html" | grep -i '^content-security-policy:')
+case "$CSP_C" in *connect-src\ *https://api.empresa.com*) expect_eq "CSP de la app abre connect-src al dominio aprobado" "ok" "ok";; *) expect_eq "CSP de la app abre connect-src al dominio aprobado" "falta: $CSP_C" "ok";; esac
+CSP_A=$(curl -s -D- -o /dev/null -b "$JAR_DEV" "$BASE/bundles/$SLUG/index.html" | grep -i '^content-security-policy:')
+case "$CSP_A" in *api.empresa.com*) expect_eq "app sin dominios declarados mantiene CSP base" "con dominio ajeno" "ok";; *) expect_eq "app sin dominios declarados mantiene CSP base" "ok" "ok";; esac
+
 echo
 echo "== resultado: $PASS ok, $FAIL fallos =="
 if [ "$FAIL" = "0" ]; then exit 0; else exit 1; fi
