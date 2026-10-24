@@ -3,12 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "description": "Plataforma para que empleados publiquen apps web internas de forma segura",
-  "packageManager": "pnpm@10.34.7",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
+  "packageManager": "pnpm@12.15.0",
   "engines": {
     "node": ">=24"
   },
