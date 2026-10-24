@@ -8,6 +8,7 @@ import { hashPassword, validatePasswordStrength, verifyPassword } from './passwo
 import { authenticateWithLdap, LdapInvalidCredentialsError } from './ldap.js';
 import { loadLdapConfig } from '../ldap/settings.js';
 import { count } from '../metrics/collector.js';
+import { count } from '../metrics/collector.js';
 import {
   COOKIE_OPTS_KEY,
   SESSION_COOKIE,
@@ -277,6 +278,8 @@ export function authRoutes(
         return forbiddenHtml(appRow.name);
       }
       if (appRow) {
+        // v1.0: cada asset servido cuenta como uso de la app.
+        count('appaccess', slug);
         const approved = await resolveApprovedDomains(db, slug);
         const frameAncestors = portalPublicUrl ? new URL(portalPublicUrl).hostname : undefined;
         reply.header('content-security-policy', buildAppCsp(approved, frameAncestors));

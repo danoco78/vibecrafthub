@@ -14,8 +14,9 @@ import { AppDbRegistry } from './datagateway/connections.js';
 import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
 import { domainsRoutes } from './domains/routes.js';
+import { metricsRoutes } from './metrics/routes.js';
 import { buildAppCsp, resolveApprovedDomains } from './domains/csp.js';
-import { flushMetrics, startMetricFlusher } from './metrics/collector.js';
+import { flushMetrics, startMetricFlusher, count } from './metrics/collector.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -45,6 +46,7 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   datagatewayRoutes(app, db, cfg);
   datagatewayAdminRoutes(app, db);
   domainsRoutes(app, db);
+  metricsRoutes(app, db);
 
   // Servir bundles directamente (modo dev sin gateway; producción lo hace Caddy con forward_auth).
   if (!cfg.databaseUrl) {
@@ -67,6 +69,8 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
           '.xml': 'application/xml; charset=utf-8',
           '.sqlite': 'application/octet-stream',
         };
+        // v1.0: cada asset servido cuenta como uso de la app (modo dev).
+        count('appaccess', slug);
         // CSP por app: dominios aprobados en connect-src/img-src (v0.3).
         const approved = await resolveApprovedDomains(db, slug);
         reply
