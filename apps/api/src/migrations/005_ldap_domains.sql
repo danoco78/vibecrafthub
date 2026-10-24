@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS ldap_config (
   user_filter    TEXT NOT NULL DEFAULT '',
   mail_attr      TEXT NOT NULL DEFAULT 'mail',
   group_attr     TEXT NOT NULL DEFAULT 'memberOf',
+  tls_skip_verify BOOLEAN NOT NULL DEFAULT false,
   role_mappings  JSONB NOT NULL DEFAULT '[]'::jsonb,
   default_role   TEXT NOT NULL DEFAULT 'user' CHECK (default_role IN ('admin', 'developer', 'user')),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()

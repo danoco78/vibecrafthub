@@ -5,6 +5,8 @@ import { requireRole } from '../plugins/auth.js';
 import { canAccessApp, loadAppBySlug, slugFromHost } from '../apps/access.js';
 import { buildAppCsp, resolveApprovedDomains } from '../domains/csp.js';
 import { hashPassword, validatePasswordStrength, verifyPassword } from './passwords.js';
+import { authenticateWithLdap, LdapInvalidCredentialsError } from './ldap.js';
+import { loadLdapConfig } from '../ldap/settings.js';
 import {
   COOKIE_OPTS_KEY,
   SESSION_COOKIE,
@@ -15,7 +17,9 @@ import {
 } from './sessions.js';
 
 const loginSchema = z.object({
-  email: z.string().email().max(254),
+  // Identificador de acceso: email local o uid/UPN corporativo (LDAP resuelve
+  // el email real desde el atributo configurado). El registro sí exige email.
+  email: z.string().trim().min(1).max(254),
   password: z.string().min(1).max(128),
 });
 
@@ -132,18 +136,74 @@ export function authRoutes(
         error: 'Demasiados intentos fallidos. Espera 15 minutos antes de volver a intentar.',
       });
     }
-    const res = await db.query<{ id: number; email: string; role: 'admin' | 'developer' | 'user'; password_hash: string; active: boolean }>(
-      'SELECT id, email, role, password_hash, active FROM users WHERE email = $1',
+    const res = await db.query<{ id: number; email: string; role: 'admin' | 'developer' | 'user'; password_hash: string; active: boolean; auth_source: 'local' | 'ldap' }>(
+      'SELECT id, email, role, password_hash, active, auth_source FROM users WHERE email = $1',
       [email],
     );
     const user = res.rows[0];
-    const ok = user ? await verifyPassword(user.password_hash, parsed.data.password) : false;
-    if (!user || !ok) {
+    if (user && !user.active) {
+      return reply.code(403).send({ error: 'Esta cuenta está desactivada. Contacta al administrador.' });
+    }
+
+    const ldapCfg = await loadLdapConfig(db);
+    // LDAP aplica a: cuentas nacidas en el directorio, o emails desconocidos
+    // (JIT). Las cuentas locales siguen autenticando con Argon2id.
+    const tryLdap = ldapCfg.enabled && (!user || user.auth_source === 'ldap');
+
+    if (tryLdap) {
+      let result;
+      try {
+        result = await authenticateWithLdap(ldapCfg, email, parsed.data.password);
+      } catch (err) {
+        if (err instanceof LdapInvalidCredentialsError) {
+          recordLoginFailure(rateKey);
+          return reply.code(401).send({ error: 'Credenciales incorrectas.' });
+        }
+        request.log.error(err);
+        return reply.code(503).send({ error: 'El directorio de la empresa no está disponible. Inténtalo más tarde.' });
+      }
+      const mail = (result.mail ?? email).toLowerCase().trim();
+      let account: { id: number; email: string; role: 'admin' | 'developer' | 'user'; active: boolean };
+      if (!user) {
+        // JIT: primera entrada corporativa. Sin hash utilizable: la contraseña vive en el directorio.
+        try {
+          const inserted = await db.query<{ id: number; email: string; role: 'admin' | 'developer' | 'user' }>(
+            "INSERT INTO users (email, password_hash, role, auth_source, ldap_dn) VALUES ($1, '', $2, 'ldap', $3) RETURNING id, email, role",
+            [mail, result.role, result.dn],
+          );
+          account = { ...inserted.rows[0], active: true };
+        } catch (err) {
+          if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+            return reply.code(409).send({ error: 'Ya existe una cuenta local con ese email. Contacta al administrador.' });
+          }
+          throw err;
+        }
+      } else {
+        // El directorio manda: el rol se recalcula con el mapeo vigente.
+        await db.query('UPDATE users SET role = $1, ldap_dn = $2 WHERE id = $3', [
+          result.role,
+          result.dn,
+          user.id,
+        ]);
+        account = { id: user.id, email: user.email, role: result.role, active: true };
+      }
+      clearLoginFailures(rateKey);
+      const session = await createSession(db, account.id, sessionTtlDays);
+      setSessionCookie(reply, session.token, session.expiresAt, {
+        domain: app.cookieOpts?.domain,
+        secure: app.cookieOpts?.secure ?? false,
+      });
+      return { user: { id: account.id, email: account.email, role: account.role } };
+    }
+
+    if (!user) {
       recordLoginFailure(rateKey);
       return reply.code(401).send({ error: 'Credenciales incorrectas.' });
     }
-    if (!user.active) {
-      return reply.code(403).send({ error: 'Esta cuenta está desactivada. Contacta al administrador.' });
+    const ok = await verifyPassword(user.password_hash, parsed.data.password);
+    if (!ok) {
+      recordLoginFailure(rateKey);
+      return reply.code(401).send({ error: 'Credenciales incorrectas.' });
     }
     clearLoginFailures(rateKey);
     const session = await createSession(db, user.id, sessionTtlDays);
@@ -163,10 +223,13 @@ export function authRoutes(
     const strengthError = validatePasswordStrength(parsed.data.newPassword);
     if (strengthError) return reply.code(400).send({ error: strengthError });
 
-    const res = await db.query<{ password_hash: string }>(
-      'SELECT password_hash FROM users WHERE id = $1',
+    const res = await db.query<{ password_hash: string; auth_source: 'local' | 'ldap' }>(
+      'SELECT password_hash, auth_source FROM users WHERE id = $1',
       [request.user!.id],
     );
+    if (res.rows[0]?.auth_source === 'ldap') {
+      return reply.code(403).send({ error: 'Tu contraseña la gestiona el directorio de la empresa; cámbiala ahí.' });
+    }
     const ok = res.rows[0] ? await verifyPassword(res.rows[0].password_hash, parsed.data.currentPassword) : false;
     if (!ok) {
       return reply.code(400).send({ error: 'La contraseña actual no es correcta.' });

@@ -21,6 +21,7 @@ export const ldapConfigSchema = z
     userFilter: z.string().trim().max(500).optional(),
     mailAttr: z.string().trim().min(1).max(64),
     groupAttr: z.string().trim().min(1).max(64),
+    tlsSkipVerify: z.boolean().optional(),
     roleMappings: z
       .array(
         z.object({
@@ -73,6 +74,8 @@ export interface LdapConfig {
   groupAttr: string;
   roleMappings: { group: string; role: (typeof PLATFORM_ROLES)[number] }[];
   defaultRole: (typeof PLATFORM_ROLES)[number];
+  /** Solo laboratorios: cifrado sí, validación de certificado no. */
+  tlsSkipVerify: boolean;
 }
 
 /** Máscara para exponer secretos en la UI sin revelarlos (patrón LLM). */

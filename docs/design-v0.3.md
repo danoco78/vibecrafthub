@@ -82,6 +82,7 @@ sequenceDiagram
 | `user_dn_pattern` | Para modo directo (`uid={login},ou=people,...`) |
 | `user_filter` | Filtro de búsqueda con `{login}` (`(&(objectClass=user)(mail={login}))` en AD) |
 | `mail_attr` / `group_attr` | Atributos de email y grupos (`mail` / `memberOf`, configurables) |
+| `tls_skip_verify` | Solo laboratorios: cifra igual pero no valida el certificado (autofirmados). Default `false` |
 | `role_mappings` | JSONB ordenado: `[{ "group": "cn=desarrolladores,...", "role": "developer" }, …]` |
 | `default_role` | `user` si ningún grupo coincide |
 

@@ -18,6 +18,7 @@ export const NULL_LDAP_CONFIG: LdapConfig = {
   userFilter: '',
   mailAttr: 'mail',
   groupAttr: 'memberOf',
+  tlsSkipVerify: false,
   roleMappings: [],
   defaultRole: 'user',
 };
@@ -34,6 +35,7 @@ interface LdapConfigRow {
   user_filter: string;
   mail_attr: string;
   group_attr: string;
+  tls_skip_verify: boolean;
   role_mappings: { group?: unknown; role?: unknown }[] | null;
   default_role: LdapConfig['defaultRole'];
 }
@@ -42,7 +44,7 @@ export async function loadLdapConfig(db: DbClient): Promise<LdapConfig> {
   try {
     const res = await db.query<LdapConfigRow>(
       `SELECT enabled, mode, url, base_dn, bind_mode, bind_dn, bind_password,
-              user_dn_pattern, user_filter, mail_attr, group_attr, role_mappings, default_role
+              user_dn_pattern, user_filter, mail_attr, group_attr, tls_skip_verify, role_mappings, default_role
        FROM ldap_config WHERE id = 1`,
     );
     const row = res.rows[0];
@@ -72,6 +74,7 @@ export async function loadLdapConfig(db: DbClient): Promise<LdapConfig> {
       userFilter: row.user_filter,
       mailAttr: row.mail_attr || 'mail',
       groupAttr: row.group_attr || 'memberOf',
+      tlsSkipVerify: row.tls_skip_verify,
       roleMappings,
       defaultRole: row.default_role,
     };
@@ -85,7 +88,7 @@ export async function saveLdapConfig(db: DbClient, cfg: LdapConfig): Promise<voi
     `UPDATE ldap_config
      SET enabled = $1, mode = $2, url = $3, base_dn = $4, bind_mode = $5, bind_dn = $6,
          bind_password = $7, user_dn_pattern = $8, user_filter = $9, mail_attr = $10,
-         group_attr = $11, role_mappings = $12::jsonb, default_role = $13, updated_at = now()
+         group_attr = $11, tls_skip_verify = $12, role_mappings = $13::jsonb, default_role = $14, updated_at = now()
      WHERE id = 1`,
     [
       cfg.enabled,
@@ -99,6 +102,7 @@ export async function saveLdapConfig(db: DbClient, cfg: LdapConfig): Promise<voi
       cfg.userFilter,
       cfg.mailAttr,
       cfg.groupAttr,
+      cfg.tlsSkipVerify,
       JSON.stringify(cfg.roleMappings),
       cfg.defaultRole,
     ],

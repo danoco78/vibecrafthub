@@ -7,6 +7,7 @@ import { policySchema, type Policy } from '@vch/shared';
 import { DEFAULT_LLM_BASE_URL, loadLlmConfig, maskApiKey } from '../llm.js';
 import { ldapConfigSchema, maskSecret, type LdapConfig } from '@vch/shared';
 import { loadLdapConfig, saveLdapConfig } from '../ldap/settings.js';
+import { testLdapConnection } from '../auth/ldap.js';
 
 const ROLES = ['admin', 'developer', 'user'] as const;
 type Role = (typeof ROLES)[number];
@@ -136,6 +137,14 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
     const strengthError = validatePasswordStrength(parsed.data.newPassword);
     if (strengthError) return reply.code(400).send({ error: strengthError });
 
+    const target = await db.query<{ auth_source: 'local' | 'ldap' }>(
+      'SELECT auth_source FROM users WHERE id = $1',
+      [id],
+    );
+    if (target.rows[0]?.auth_source === 'ldap') {
+      return reply.code(400).send({ error: 'La contraseña de este usuario la gestiona el directorio de la empresa.' });
+    }
+
     const passwordHash = await hashPassword(parsed.data.newPassword);
     const res = await db.query<{ id: number }>(
       'UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id',
@@ -225,6 +234,7 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
       bindPassword,
       userDnPattern: input.userDnPattern ?? '',
       userFilter: input.userFilter ?? '',
+      tlsSkipVerify: input.tlsSkipVerify ?? false,
     };
     await saveLdapConfig(db, cfg);
     return {
@@ -233,6 +243,25 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
         bindPasswordMasked: maskSecret(cfg.bindPassword),
         bindPassword: undefined,
       },
+    };
+  });
+
+  /** Test de conexión (decisión #6): bind, búsqueda y autenticación opcional. */
+  app.post('/api/ldap-config/test', { preHandler: requireAdmin }, async (request, reply) => {
+    const cfg = await loadLdapConfig(db);
+    if (!cfg.url || !cfg.baseDn) {
+      return reply.code(400).send({ error: 'Configura url y baseDn antes de probar la conexión.' });
+    }
+    const body = request.body as { login?: unknown; password?: unknown } | null;
+    const result = await testLdapConnection(cfg, {
+      login: typeof body?.login === 'string' ? body.login : undefined,
+      password: typeof body?.password === 'string' ? body.password : undefined,
+    });
+    return {
+      ok: result.steps.every((s) => s.ok),
+      steps: result.steps,
+      role: result.result?.role,
+      email: result.result?.mail,
     };
   });
 }
