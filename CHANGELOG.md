@@ -65,4 +65,5 @@ Primera versión funcional del producto: publicación autónoma de apps web inte
 - Ninguna app publicada puede invocar la API de la plataforma (cross-origin + CSP).
 - API keys del proveedor LLM nunca expuestas en el portal (solo máscara).
 
+[0.2.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.2.0
 [0.1.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.1.0
