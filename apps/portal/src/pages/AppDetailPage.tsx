@@ -117,6 +117,16 @@ export default function AppDetailPage() {
       </div>
       {app.description && <p className="muted">{app.description}</p>}
       {notice && <div className="banner ok">{notice}</div>}
+      {app.externalDomains && app.externalDomains.length > 0 && (
+        <div className="inline" style={{ marginBottom: 8 }}>
+          <span className="muted">Dominios externos:</span>
+          {app.externalDomains.map((d) => (
+            <span key={d.declared} className={`badge ${d.approved ? 'published' : 'rejected'}`}>
+              {d.approved ? '✓' : '⚠'} {d.declared}
+            </span>
+          ))}
+        </div>
+      )}
 
       {canManage && (
         <>

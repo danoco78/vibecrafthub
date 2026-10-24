@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, databaseDownloadUrl, type DbLimits, type DbOverviewRow, type LlmConfigView, type User } from '../api';
 import { useAuth } from '../App';
+import LdapSection from '../components/LdapSection';
+import DomainsSection from '../components/DomainsSection';
 
 interface Policy {
   blockSeverities: string[];
@@ -178,6 +180,11 @@ export default function AdminPage() {
                 <td>{u.email}</td>
                 <td>
                   <span className="badge info">{u.role}</span>
+                  {u.auth_source === 'ldap' && (
+                    <span className="badge info" title="Cuenta del directorio corporativo">
+                      LDAP
+                    </span>
+                  )}
                 </td>
                 <td>
                   <span className={`badge ${u.active === false ? 'rejected' : 'published'}`}>
@@ -403,6 +410,9 @@ export default function AdminPage() {
           </button>
         </div>
       )}
+
+      <LdapSection />
+      <DomainsSection />
 
       <h2>Bases de datos de apps</h2>
       <p className="muted">

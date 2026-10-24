@@ -5,6 +5,9 @@ import { requireRole } from '../plugins/auth.js';
 import { hashPassword, validatePasswordStrength } from '../auth/passwords.js';
 import { policySchema, type Policy } from '@vch/shared';
 import { DEFAULT_LLM_BASE_URL, loadLlmConfig, maskApiKey } from '../llm.js';
+import { ldapConfigSchema, maskSecret, type LdapConfig } from '@vch/shared';
+import { loadLdapConfig, saveLdapConfig } from '../ldap/settings.js';
+import { testLdapConnection } from '../auth/ldap.js';
 
 const ROLES = ['admin', 'developer', 'user'] as const;
 type Role = (typeof ROLES)[number];
@@ -39,8 +42,8 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
   const requireAdmin = requireRole(app, 'admin');
 
   app.get('/api/admin/users', { preHandler: requireAdmin }, async () => {
-    const res = await db.query<{ id: number; email: string; role: Role; active: boolean; created_at: string }>(
-      'SELECT id, email, role, active, created_at FROM users ORDER BY created_at ASC',
+    const res = await db.query<{ id: number; email: string; role: Role; active: boolean; created_at: string; auth_source: 'local' | 'ldap' }>(
+      'SELECT id, email, role, active, created_at, auth_source FROM users ORDER BY created_at ASC',
     );
     return { users: res.rows };
   });
@@ -134,6 +137,14 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
     const strengthError = validatePasswordStrength(parsed.data.newPassword);
     if (strengthError) return reply.code(400).send({ error: strengthError });
 
+    const target = await db.query<{ auth_source: 'local' | 'ldap' }>(
+      'SELECT auth_source FROM users WHERE id = $1',
+      [id],
+    );
+    if (target.rows[0]?.auth_source === 'ldap') {
+      return reply.code(400).send({ error: 'La contraseña de este usuario la gestiona el directorio de la empresa.' });
+    }
+
     const passwordHash = await hashPassword(parsed.data.newPassword);
     const res = await db.query<{ id: number }>(
       'UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id',
@@ -188,6 +199,69 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
         apiKeyMasked: maskApiKey(apiKey),
         onUnavailable: data.onUnavailable,
       },
+    };
+  });
+
+  // ---------- directorio LDAP/AD (v0.3) ----------
+  app.get('/api/ldap-config', { preHandler: requireAdmin }, async () => {
+    const cfg = await loadLdapConfig(db);
+    return {
+      config: {
+        ...cfg,
+        roleMappings: cfg.roleMappings,
+        bindPasswordMasked: maskSecret(cfg.bindPassword),
+        bindPassword: undefined,
+      },
+    };
+  });
+
+  app.put('/api/ldap-config', { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = ldapConfigSchema.safeParse(request.body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+      return reply.code(400).send({ error: `Configuración LDAP inválida: ${detail}` });
+    }
+    const input = parsed.data;
+    const existing = await loadLdapConfig(db);
+    // Contraseña vacía/ausente = conservar la guardada (no se re-expone en el portal)
+    const bindPassword = input.bindPassword && input.bindPassword.length > 0 ? input.bindPassword : existing.bindPassword;
+    if (input.enabled && input.bindMode === 'service' && !bindPassword) {
+      return reply.code(400).send({ error: 'Configuración LDAP inválida: bindDn/bindPassword: la contraseña del bind es obligatoria con el directorio activado.' });
+    }
+    const cfg: LdapConfig = {
+      ...input,
+      bindDn: input.bindDn ?? '',
+      bindPassword,
+      userDnPattern: input.userDnPattern ?? '',
+      userFilter: input.userFilter ?? '',
+      tlsSkipVerify: input.tlsSkipVerify ?? false,
+    };
+    await saveLdapConfig(db, cfg);
+    return {
+      config: {
+        ...cfg,
+        bindPasswordMasked: maskSecret(cfg.bindPassword),
+        bindPassword: undefined,
+      },
+    };
+  });
+
+  /** Test de conexión (decisión #6): bind, búsqueda y autenticación opcional. */
+  app.post('/api/ldap-config/test', { preHandler: requireAdmin }, async (request, reply) => {
+    const cfg = await loadLdapConfig(db);
+    if (!cfg.url || !cfg.baseDn) {
+      return reply.code(400).send({ error: 'Configura url y baseDn antes de probar la conexión.' });
+    }
+    const body = request.body as { login?: unknown; password?: unknown } | null;
+    const result = await testLdapConnection(cfg, {
+      login: typeof body?.login === 'string' ? body.login : undefined,
+      password: typeof body?.password === 'string' ? body.password : undefined,
+    });
+    return {
+      ok: result.steps.every((s) => s.ok),
+      steps: result.steps,
+      role: result.result?.role,
+      email: result.result?.mail,
     };
   });
 }

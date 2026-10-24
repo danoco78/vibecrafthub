@@ -1,4 +1,4 @@
-import { type AppManifest, type Finding, type Policy, blocksPublish } from '@vch/shared';
+import { type AppManifest, type Finding, type Policy, blocksPublish, firstUrlHost, normalizeDomain } from '@vch/shared';
 import type { BundleEntry } from './types.js';
 import { RULES } from './rules.js';
 import { checkReferences } from './references.js';
@@ -13,11 +13,29 @@ export interface ScanResult {
   manifest: AppManifest | null;
 }
 
+/** Reglas cuyo hallazgo se omite cuando el host de la URL está en la allowlist del admin. */
+const ALLOWLIST_AWARE_RULES = new Set([
+  'remote-script',
+  'remote-stylesheet',
+  'remote-iframe',
+  'remote-image',
+  'remote-fetch',
+  'xmlhttprequest',
+  'no-websocket',
+  'no-dynamic-import-url',
+]);
+
 /**
  * Pipeline de revisión estático: estructura + reglas.
  * El veredicto depende de la política: severidad ≥ umbral bloquea.
+ * `externalAllowlist`: dominios aprobados por el admin (v0.3); las reglas de
+ * recursos remotos no hallan URLs cuyo host esté aprobado.
  */
-export function scanBundle(entries: BundleEntry[], policy: Policy): ScanResult {
+export function scanBundle(
+  entries: BundleEntry[],
+  policy: Policy,
+  externalAllowlist: string[] = [],
+): ScanResult {
   const findings: Finding[] = [];
   const { findings: structureFindings, manifest } = validateStructure(entries, {
     maxFiles: policy.maxFiles,
@@ -52,6 +70,14 @@ export function scanBundle(entries: BundleEntry[], policy: Policy): ScanResult {
       for (let i = 0; i < lines.length; i++) {
         rule.pattern.lastIndex = 0;
         if (rule.pattern.test(lines[i])) {
+          // Dominio aprobado por el admin ⇒ la regla de recurso remoto no aplica.
+          if (
+            externalAllowlist.length > 0 &&
+            ALLOWLIST_AWARE_RULES.has(rule.id) &&
+            externalAllowlist.includes(firstUrlHost(lines[i]) ?? '')
+          ) {
+            continue;
+          }
           findings.push({
             rule: rule.id,
             severity: rule.severity,
@@ -72,19 +98,26 @@ export function scanBundle(entries: BundleEntry[], policy: Policy): ScanResult {
   // Uso de VCH.db sin cargar /db/sdk.js: persistencia rota (o silenciosa).
   findings.push(...checkSdkUsage(entries));
 
-  // Dominios externos declarados: la allowlist global llega en v2,
-  // así que cualquier dominio externo genera hallazgo alto.
+  // Dominios externos declarados: solo se aceptan si el admin los aprobó en
+  // la allowlist (v0.3). Cada dominio pendiente genera su hallazgo accionable.
   if (manifest && manifest.externalDomains && manifest.externalDomains.length > 0) {
-    findings.push({
-      rule: 'manifest-external-domains',
-      severity: 'high',
-      file: 'app.json',
-      line: 0,
-      snippet: manifest.externalDomains.join(', ').slice(0, MAX_SNIPPET),
-      message:
-        'La app declara dominios externos, pero la empresa aún no tiene allowlist de dominios configurada.',
-      fix: 'Elimina las llamadas a dominios externos, o pide al admin habilitar el allowlist de dominios.',
-    });
+    const approved = new Set(externalAllowlist);
+    const pending = manifest.externalDomains
+      .map((d) => ({ declared: d, normalized: normalizeDomain(d) }))
+      .filter((d) => !d.normalized || !approved.has(d.normalized));
+    for (const p of pending) {
+      findings.push({
+        rule: 'manifest-external-domains',
+        severity: 'high',
+        file: 'app.json',
+        line: 0,
+        snippet: p.declared.slice(0, MAX_SNIPPET),
+        message: p.normalized
+          ? `El dominio externo "${p.normalized}" no está aprobado por la empresa.`
+          : `El dominio declarado "${p.declared}" no tiene formato válido (usa api.ejemplo.com, sin esquema ni ruta).`,
+        fix: 'Solicita al admin agregarlo en Panel → Dominios externos, o elimina la dependencia externa.',
+      });
+    }
   }
 
   return { findings, manifest };
