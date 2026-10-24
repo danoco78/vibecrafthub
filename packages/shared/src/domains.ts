@@ -31,3 +31,14 @@ export function hostnameOf(url: string): string | null {
   const normalized = normalizeDomain(url);
   return normalized;
 }
+
+/**
+ * Primer host con URL explícita dentro de una línea de código
+ * (https://, wss://, protocol-relative //host/…). Null si no hay.
+ * Lo usan las reglas del scanner para verificar contra la allowlist.
+ */
+export function firstUrlHost(text: string): string | null {
+  const match = /(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?\/\/([^\s"'`<>()\\]+)/.exec(text);
+  if (!match) return null;
+  return normalizeDomain(match[1]);
+}

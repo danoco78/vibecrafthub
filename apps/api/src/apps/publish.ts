@@ -8,6 +8,7 @@ import { APP_MANIFEST_FILENAME, blocksPublish, countBySeverity, type Finding, ty
 import type { DbClient } from '../db.js';
 import { extractBundle, setActiveVersion } from './storage.js';
 import { loadLlmConfig, reviewBundleWithLlm } from '../llm.js';
+import { loadExternalAllowlist } from '../domains/allowlist.js';
 
 interface AppRow {
   id: number;
@@ -142,8 +143,9 @@ export async function publishBundle(
     return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash);
   }
 
-  // --- Scanner: estructura + reglas ---
-  const scan = scanBundle(entries, policy);
+  // --- Scanner: estructura + reglas (con la allowlist de dominios del admin) ---
+  const externalAllowlist = await loadExternalAllowlist(db);
+  const scan = scanBundle(entries, policy, externalAllowlist);
   findings.push(...scan.findings);
 
   const manifest = scan.manifest;
