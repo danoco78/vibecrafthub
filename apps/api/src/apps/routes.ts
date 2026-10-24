@@ -6,6 +6,7 @@ import type { DbClient } from '../db.js';
 import { requireAuth, requireRole } from '../plugins/auth.js';
 import { loadPolicy } from '../policy.js';
 import { canManageApp, isAppMember } from './access.js';
+import { loadExternalAllowlist } from '../domains/allowlist.js';
 import { persistAttempt, publishBundle } from './publish.js';
 import { setActiveVersion } from './storage.js';
 
@@ -115,7 +116,17 @@ export function appsRoutes(
     if (!appRow || !(await canSee(db, appRow, request))) {
       return reply.code(404).send({ error: 'App no encontrada.' });
     }
-    return { app: appRow };
+    // Dominios externos declarados por la versión activa + estado de aprobación (v0.3)
+    const extRes = await db.query<{ external_domains: string[] | null }>(
+      `SELECT v.external_domains FROM app_versions v WHERE v.id = $1`,
+      [appRow.current_version_id],
+    );
+    const allowlist = await loadExternalAllowlist(db);
+    const externalDomains = (extRes.rows[0]?.external_domains ?? []).map((d) => ({
+      declared: d,
+      approved: allowlist.includes(d),
+    }));
+    return { app: { ...appRow, externalDomains } };
   });
 
   // ---------- ajustes (visibilidad, descripción) ----------

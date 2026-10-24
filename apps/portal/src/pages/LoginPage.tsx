@@ -38,6 +38,10 @@ export default function LoginPage() {
         Vibe<span style={{ color: 'var(--accent)' }}>Craft</span>Hub
       </h1>
       <form className="card" onSubmit={submit}>
+        <p className="muted" style={{ margin: '0 0 12px' }}>
+          ¿Empleado corporativo? Si tu empresa tiene directorio integrado, entra con tus
+          credenciales habituales (usuario o email) y tu cuenta se crea sola al primer ingreso.
+        </p>
         {error && (
           <div className="banner err" role="alert">
             {error}
