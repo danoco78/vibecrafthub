@@ -2,11 +2,11 @@
 
 [English](README.md) | **Español**
 
-![Release](https://img.shields.io/badge/release-v0.3.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v1.0.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-115%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-134%20passing-34c98e)
 ![Idioma](https://img.shields.io/badge/docs-espa%C3%B1ol-f0b429)
 
 **Plataforma self-hosted para que los empleados de una empresa publiquen aplicaciones web internas de forma autónoma y segura** — sin tickets de TI, sin shadow IT, sin abrir puertos en PCs de escritorio.
@@ -24,6 +24,8 @@ VibeCraftHub canaliza esa energía por un camino controlado: un catálogo intern
 - 📦 **Publicación autónoma** — el empleado sube un zip con su app (html, js, css, json, xml, sqlite opcional); sin intervención de TI.
 - 🔑 **Login corporativo LDAP/AD** — los empleados entran con sus credenciales del directorio; la cuenta se crea sola al primer ingreso y el rol sale del mapeo de grupos. El login local queda como rescate.
 - 🌐 **Allowlist de dominios externos** — el admin aprueba dominios; las apps que los declaran pasan el pipeline y obtienen CSP para consumirlos.
+- 📊 **Métricas de uso** — logins por origen, publicaciones, queries del data gateway y accesos a apps, agregados por día con rangos 24 h/7 d/30 d y export CSV.
+- 🗂️ **Export de auditoría** — publicaciones y acciones de administración en CSV o JSON, filtrables por rango de fechas y app.
 - 🗄️ **Data gateway: BD SQLite por app** — las apps tienen persistencia real compartida entre sus usuarios vía SDK (`VCH.db`), aislada por completo entre apps, con cuota y límites configurables.
 - 🔒 **Apps privadas con allowlist** — el dueño restringe qué usuarios concretos pueden ver y usar cada app; catálogo y subdominio hacen enforcement.
 - 🔍 **Pipeline de revisión en 3 etapas** — estructura (zip-slip, extensiones, binarios disfrazados, límites), reglas estáticas con severidades y revisión semántica con LLM (OpenAI-compatible o Anthropic, cloud o local). Cada rechazo entrega un reporte con archivo, línea y corrección sugerida.
@@ -103,7 +105,7 @@ pnpm dev:api                      # API en :3000 (PGlite embebida, sin docker)
 pnpm dev:portal                   # portal en :5173 con hot-reload
 ```
 
-Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway y apps privadas), `infra/smoke-ldap.sh` (13, login corporativo con directorio real desechable; requiere podman).
+Pruebas de integración contra el API real: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway y apps privadas), `infra/smoke-ldap.sh` (13, login corporativo con directorio real desechable; requiere podman), `infra/smoke-metrics.sh` (19, métricas y export de auditoría).
 
 ## Data gateway: persistencia por app
 
@@ -192,6 +194,12 @@ Por defecto una app no puede contactar nada fuera de sí misma. Si necesita una 
 
 Quitar un dominio aprobado bloquea la próxima publicación de las apps que lo usen (las ya publicadas siguen funcionando hasta entonces).
 
+### Métricas y auditoría
+
+Admin → Métricas de uso: accesos a apps, queries del data gateway, publicaciones y logins (por origen), agregados por día con rangos de 24 horas, 7 y 30 días. Todo exportable a CSV.
+
+Admin → Export de auditoría: el historial completo de publicaciones (con hallazgos por intento) y las acciones de administración, en CSV o JSON, filtrable por rango de fechas y app. Ambos requieren rol admin.
+
 ### LLM local
 
 Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp o vLLM. El código nunca sale de la empresa.
@@ -203,7 +211,7 @@ Apunta la URL base a tu servidor OpenAI-compatible. Desde contenedor: `http://ho
 | **v0.1** | Catálogo, publicación con pipeline, revisión LLM, auditoría, administración | ✅ |
 | **v0.2** | Data gateway: SQLite compartida por app vía SDK, apps privadas con allowlist | ✅ esta release |
 | **v0.3** | Conector LDAP/Active Directory, allowlist de dominios externos | ✅ esta release |
-| **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | |
+| **v1.0** | Métricas de uso, export de auditoría, endurecimiento multi-replica | ✅ métricas y auditoría (multi-replica aplazada) |
 
 ## Licencia
 

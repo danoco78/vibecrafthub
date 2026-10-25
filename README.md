@@ -2,11 +2,11 @@
 
 **English** | [Español](README.es.md)
 
-![Release](https://img.shields.io/badge/release-v0.3.0-4f8cff)
+![Release](https://img.shields.io/badge/release-v1.0.0-4f8cff)
 ![License](https://img.shields.io/github/license/danoco78/vibecrafthub)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Podman](https://img.shields.io/badge/podman-%E2%89%A55-8930cb)
-![Tests](https://img.shields.io/badge/tests-115%20passing-34c98e)
+![Tests](https://img.shields.io/badge/tests-134%20passing-34c98e)
 
 **Self-hosted platform that lets employees publish internal web applications autonomously and securely** — no IT tickets, no shadow IT, no open ports on desktop PCs.
 
@@ -23,6 +23,8 @@ VibeCraftHub channels that energy down a controlled path: an internal catalog wh
 - 📦 **Autonomous publishing** — the employee uploads a zip with their app (html, js, css, json, xml, optional sqlite); no IT intervention.
 - 🔑 **Corporate LDAP/AD login** — employees sign in with their directory credentials; the account is created at first sign-in and the role comes from group mapping. Local login stays as a rescue path.
 - 🌐 **External domain allowlist** — admins approve domains; apps declaring them pass the pipeline and get CSP to reach them.
+- 📊 **Usage metrics** — logins by origin, publishes, data gateway queries and app access, aggregated daily with 24 h/7 d/30 d ranges and CSV export.
+- 🗂️ **Audit export** — publishes and admin actions as CSV or JSON, filterable by date range and app.
 - 🗄️ **Data gateway: SQLite per app** — published apps get real server-side persistence shared by their users via a SDK (`VCH.db`), fully isolated between apps, with configurable quotas and limits.
 - 🔒 **Private apps with allowlists** — the owner restricts which specific users can see and use each app; both the catalog and the app subdomain enforce it.
 - 🔍 **3-stage review pipeline** — structure (zip-slip, extensions, disguised binaries, limits), severity-graded static rules, and LLM semantic review (OpenAI-compatible or Anthropic, cloud or local). Every rejection returns a report with file, line, and suggested fix.
@@ -102,7 +104,7 @@ pnpm dev:api                      # API on :3000 (embedded PGlite, no docker)
 pnpm dev:portal                   # portal on :5173 with hot-reload
 ```
 
-Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway and private apps), `infra/smoke-ldap.sh` (13, corporate login against a disposable real directory; requires podman).
+Integration tests against the real API: `infra/smoke.sh` (15), `infra/smoke-llm.sh` (13), `infra/smoke-account.sh` (16), `infra/smoke-data.sh` (31, data gateway and private apps), `infra/smoke-ldap.sh` (13, corporate login against a disposable real directory; requires podman), `infra/smoke-metrics.sh` (19, usage metrics and audit export).
 
 ## Data gateway: per-app persistence
 
@@ -192,6 +194,12 @@ By default an app cannot reach anything outside itself. If it needs an internal 
 
 Removing an approved domain blocks the next publish of the apps that use it (already-published ones keep working until then).
 
+### Metrics and audit
+
+Admin → Usage metrics: app access, data gateway queries, publishes and logins (by origin), aggregated daily across 24-hour, 7-day and 30-day ranges. Everything exportable to CSV.
+
+Admin → Audit export: the full history of publishes (with per-attempt findings) and admin actions, as CSV or JSON, filterable by date range and app. Both require the admin role.
+
 ### Local LLM
 
 Point the base URL at your OpenAI-compatible server. From a container: `http://host.containers.internal:11434/v1` (Ollama), llama.cpp, or vLLM. Your code never leaves the company.
@@ -203,7 +211,7 @@ Point the base URL at your OpenAI-compatible server. From a container: `http://h
 | **v0.1** | Catalog, publish pipeline, LLM review, audit trail, administration | ✅ |
 | **v0.2** | Data gateway: shared per-app SQLite via SDK, private apps with allowlists | ✅ this release |
 | **v0.3** | LDAP/Active Directory connector, external domain allowlist | ✅ this release |
-| **v1.0** | Usage metrics, audit export, multi-replica hardening | |
+| **v1.0** | Usage metrics, audit export, multi-replica hardening | ✅ metrics and audit (multi-replica postponed) |
 
 ## License
 
