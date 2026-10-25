@@ -14,7 +14,10 @@ import { AppDbRegistry } from './datagateway/connections.js';
 import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
 import { domainsRoutes } from './domains/routes.js';
+import { auditRoutes } from './admin/audit.js';
+import { metricsRoutes } from './metrics/routes.js';
 import { buildAppCsp, resolveApprovedDomains } from './domains/csp.js';
+import { flushMetrics, startMetricFlusher, count } from './metrics/collector.js';
 
 export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db: DbClient }> {
   const app = Fastify({
@@ -44,6 +47,8 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   datagatewayRoutes(app, db, cfg);
   datagatewayAdminRoutes(app, db);
   domainsRoutes(app, db);
+  metricsRoutes(app, db);
+  auditRoutes(app, db);
 
   // Servir bundles directamente (modo dev sin gateway; producción lo hace Caddy con forward_auth).
   if (!cfg.databaseUrl) {
@@ -66,6 +71,8 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
           '.xml': 'application/xml; charset=utf-8',
           '.sqlite': 'application/octet-stream',
         };
+        // v1.0: cada asset servido cuenta como uso de la app (modo dev).
+        count('appaccess', slug);
         // CSP por app: dominios aprobados en connect-src/img-src (v0.3).
         const approved = await resolveApprovedDomains(db, slug);
         reply
@@ -93,9 +100,22 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
 
 async function main(): Promise<void> {
   const cfg = configFromEnv();
-  const { app } = await buildApp(cfg);
+  const { app, db } = await buildApp(cfg);
   const mode = cfg.databaseUrl ? 'postgres' : 'pglite (dev)';
   app.log.info(`arrancando con driver: ${mode}`);
+  startMetricFlusher(db);
+
+  // Flush de métricas pendientes antes de salir (SIGTERM/SIGINT).
+  let closing = false;
+  const shutdown = async (signal: string): Promise<void> => {
+    if (closing) return;
+    closing = true;
+    await flushMetrics(db).catch(() => undefined);
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+
   await app.listen({ port: cfg.port, host: cfg.host });
 }
 

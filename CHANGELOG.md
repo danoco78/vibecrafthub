@@ -2,6 +2,26 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.0.0] - 2026-10-25
+
+Métricas de uso y export de auditoría: observabilidad completa de la plataforma. Diseño de referencia: `docs/design-v1.0-metrics-audit.md`. (El endurecimiento multi-replica se discutirá como hito aparte.)
+
+### Added
+
+- **Métricas de uso**: contadores agregados por día de logins (origen y resultado), publicaciones por app (ok/rechazo), queries del data gateway (ok/error) y accesos a apps. Buffer en memoria con flush batch cada 10 s y al apagar (SIGTERM/SIGINT).
+- **Panel de métricas**: rangos de 24 horas, 7 y 30 días; tarjetas de resumen con barras segmentadas y tabla por app — sin librerías de gráficos.
+- **Export CSV de métricas** (`day,metric,key,value`) por rango.
+- **Export de auditoría**: publicaciones (una fila por intento, hallazgos como JSON compacto; JSON con hallazgos expandidos) y acciones de administración, filtrables por rango de fechas y app.
+- **Auditoría ampliada**: la alta de usuarios por admin queda registrada en `admin_actions`.
+- **`infra/smoke-metrics.sh`**: 19 pruebas end-to-end (conteos tras flush, permisos, exports con filtros y formatos).
+
+### Security
+
+- Métricas y exports: solo rol admin (403 para el resto, verificado).
+- El export de auditoría es de solo lectura: el historial inmutable no se altera.
+
+[1.0.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v1.0.0
+
 ## [0.3.0] - 2026-10-23
 
 Login corporativo con LDAP/Active Directory y allowlist de dominios externos. Diseño de referencia: `docs/design-v0.3.md`.
@@ -88,6 +108,7 @@ Primera versión funcional del producto: publicación autónoma de apps web inte
 - Ninguna app publicada puede invocar la API de la plataforma (cross-origin + CSP).
 - API keys del proveedor LLM nunca expuestas en el portal (solo máscara).
 
+[1.0.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v1.0.0
 [0.3.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.3.0
 [0.2.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.2.0
 [0.1.0]: https://github.com/danoco78/vibecrafthub/releases/tag/v0.1.0

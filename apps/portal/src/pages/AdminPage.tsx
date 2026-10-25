@@ -3,6 +3,7 @@ import { api, databaseDownloadUrl, type DbLimits, type DbOverviewRow, type LlmCo
 import { useAuth } from '../App';
 import LdapSection from '../components/LdapSection';
 import DomainsSection from '../components/DomainsSection';
+import MetricsSection from '../components/MetricsSection';
 
 interface Policy {
   blockSeverities: string[];
@@ -31,6 +32,15 @@ export default function AdminPage() {
   const [llmApiKey, setLlmApiKey] = useState('');
   const [dbLimits, setDbLimits] = useState<DbLimits | null>(null);
   const [dbRows, setDbRows] = useState<DbOverviewRow[]>([]);
+  const [axType, setAxType] = useState<'publishes' | 'actions'>('publishes');
+  const [axFormat, setAxFormat] = useState<'csv' | 'json'>('csv');
+  const [axFrom, setAxFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [axTo, setAxTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [axSlug, setAxSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -162,6 +172,57 @@ export default function AdminPage() {
       <h1>Administración</h1>
       {error && <div className="banner err">{error}</div>}
       {notice && <div className="banner ok">{notice}</div>}
+
+      <MetricsSection />
+
+      <h2>Export de auditoría</h2>
+      <div className="card inline">
+        <div style={{ minWidth: 180 }}>
+          <label htmlFor="ax-type">Contenido</label>
+          <select id="ax-type" value={axType} onChange={(e) => setAxType(e.target.value as typeof axType)}>
+            <option value="publishes">Publicaciones (intento por fila)</option>
+            <option value="actions">Acciones de administración</option>
+          </select>
+        </div>
+        <div style={{ minWidth: 160 }}>
+          <label htmlFor="ax-from">Desde</label>
+          <input id="ax-from" type="date" value={axFrom} onChange={(e) => setAxFrom(e.target.value)} />
+        </div>
+        <div style={{ minWidth: 160 }}>
+          <label htmlFor="ax-to">Hasta</label>
+          <input id="ax-to" type="date" value={axTo} onChange={(e) => setAxTo(e.target.value)} />
+        </div>
+        {axType === 'publishes' && (
+          <div style={{ minWidth: 180 }}>
+            <label htmlFor="ax-slug">App (opcional)</label>
+            <input
+              id="ax-slug"
+              value={axSlug}
+              onChange={(e) => setAxSlug(e.target.value)}
+              placeholder="todas las apps"
+            />
+          </div>
+        )}
+        <div style={{ minWidth: 110 }}>
+          <label htmlFor="ax-format">Formato</label>
+          <select id="ax-format" value={axFormat} onChange={(e) => setAxFormat(e.target.value as typeof axFormat)}>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+        <button
+          onClick={async () => {
+            setError(null);
+            try {
+              await api.auditExport({ type: axType, format: axFormat, from: axFrom, to: axTo, slug: axSlug || undefined });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Error');
+            }
+          }}
+        >
+          Descargar
+        </button>
+      </div>
 
       <h2>Usuarios</h2>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>
