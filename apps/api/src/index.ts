@@ -14,6 +14,7 @@ import { AppDbRegistry } from './datagateway/connections.js';
 import { datagatewayRoutes } from './datagateway/routes.js';
 import { datagatewayAdminRoutes } from './datagateway/admin.js';
 import { domainsRoutes } from './domains/routes.js';
+import { auditRoutes } from './admin/audit.js';
 import { metricsRoutes } from './metrics/routes.js';
 import { buildAppCsp, resolveApprovedDomains } from './domains/csp.js';
 import { flushMetrics, startMetricFlusher, count } from './metrics/collector.js';
@@ -47,6 +48,7 @@ export async function buildApp(cfg: Config): Promise<{ app: FastifyInstance; db:
   datagatewayAdminRoutes(app, db);
   domainsRoutes(app, db);
   metricsRoutes(app, db);
+  auditRoutes(app, db);
 
   // Servir bundles directamente (modo dev sin gateway; producción lo hace Caddy con forward_auth).
   if (!cfg.databaseUrl) {

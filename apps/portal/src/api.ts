@@ -218,6 +218,34 @@ export const api = {
   metrics: (days: number) =>
     request<MetricsView>(`/api/admin/metrics?days=${days}`),
 
+  auditExport: async (params: {
+    type: 'publishes' | 'actions';
+    format: 'csv' | 'json';
+    from: string;
+    to: string;
+    slug?: string;
+  }): Promise<void> => {
+    const qs = new URLSearchParams({ type: params.type, format: params.format, from: params.from, to: params.to });
+    if (params.slug) qs.set('slug', params.slug);
+    const res = await fetch(`/api/admin/audit/export?${qs}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = `Error ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body && typeof body.error === 'string') message = body.error;
+      } catch { /* sin cuerpo */ }
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = match ? match[1] : `auditoria.${params.format}`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  },
+
   ldapConfig: () => request<{ config: LdapConfigView }>('/api/ldap-config'),  updateLdapConfig: (c: Omit<LdapConfigView, 'bindPasswordMasked'> & { bindPassword?: string }) =>
     request<{ config: LdapConfigView }>('/api/ldap-config', { method: 'PUT', body: JSON.stringify(c) }),
   testLdap: (login?: string, password?: string) =>

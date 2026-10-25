@@ -69,6 +69,15 @@ export function adminRoutes(app: FastifyInstance, db: DbClient): void {
         return reply.code(409).send({ error: 'Ya existe un usuario con ese email.' });
       }
       throw err;
+    } finally {
+      // Auditoría: alta de usuario por parte de un admin.
+      if (reply.statusCode === 201) {
+        await db.query('INSERT INTO admin_actions (user_id, action, target) VALUES ($1, $2, $3)', [
+          request.user!.id,
+          'user.create',
+          email,
+        ]);
+      }
     }
   });
 
