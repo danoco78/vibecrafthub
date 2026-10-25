@@ -303,7 +303,7 @@ export function appsRoutes(
       if (tooLarge) {
         const outcome = await persistAttempt(
           db,
-          appRow.id,
+          appRow,
           request.user!.id,
           null,
           'rejected',

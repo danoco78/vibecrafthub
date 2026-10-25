@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import { canAccessApp, loadAppBySlug, SLUG_RE, slugFromHost } from '../apps/access.js';
 import { classifyStatement, executeStatement, VchDbError } from './engine.js';
 import { loadDbPolicy } from './settings.js';
+import { count } from '../metrics/collector.js';
 import { SDK_JS } from './sdk.js';
 
 /**
@@ -122,7 +123,9 @@ export function datagatewayRoutes(app: FastifyInstance, db: DbClient, cfg: Confi
     let result;
     try {
       result = executeStatement(conn, sql, kind, body.params, policy);
+      count('dbquery.ok', slug);
     } catch (err) {
+      count('dbquery.error', slug);
       if (err instanceof VchDbError) return replyError(reply, err);
       request.log.error(err);
       return replyError(reply, new VchDbError('VCH_DB_INTERNAL', 'Error ejecutando el statement.', 500));

@@ -10,6 +10,7 @@ import { extractBundle, setActiveVersion } from './storage.js';
 import { loadLlmConfig, reviewBundleWithLlm } from '../llm.js';
 import { loadExternalAllowlist } from '../domains/allowlist.js';
 import { invalidateDomainCaches } from '../domains/csp.js';
+import { count } from '../metrics/collector.js';
 
 interface AppRow {
   id: number;
@@ -141,7 +142,7 @@ export async function publishBundle(
         'Empaqueta la app como .zip estándar (no .tar, no .rar) e inténtalo de nuevo.',
       ),
     );
-    return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash);
+    return persistAttempt(db, app, userId, null, 'rejected', findings, bundleHash);
   }
 
   // --- Scanner: estructura + reglas (con la allowlist de dominios del admin) ---
@@ -206,7 +207,7 @@ export async function publishBundle(
   const verdict = verdictFromFindings(findings, policy);
 
   if (verdict === 'rejected' || !manifest) {
-    return persistAttempt(db, app.id, userId, null, 'rejected', findings, bundleHash, llmMeta);
+    return persistAttempt(db, app, userId, null, 'rejected', findings, bundleHash, llmMeta);
   }
 
   // --- Publicar: extracción inmutable + versión + symlink activo ---
@@ -232,12 +233,12 @@ export async function publishBundle(
   }
   await db.query('UPDATE apps SET current_version_id = $1 WHERE id = $2', [versionId, app.id]);
 
-  return persistAttempt(db, app.id, userId, versionId, 'published', findings, bundleHash, llmMeta, version);
+  return persistAttempt(db, app, userId, versionId, 'published', findings, bundleHash, llmMeta, version);
 }
 
 export async function persistAttempt(
   db: DbClient,
-  appId: number,
+  app: { id: number; slug: string },
   userId: number,
   versionId: number | null,
   verdict: 'published' | 'rejected',
@@ -249,8 +250,9 @@ export async function persistAttempt(
   const res = await db.query<{ id: number }>(
     `INSERT INTO publish_attempts (app_id, user_id, version_id, verdict, findings, bundle_hash, meta)
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb) RETURNING id`,
-    [appId, userId, versionId, verdict, JSON.stringify(findings), bundleHash, JSON.stringify(meta ?? {})],
+    [app.id, userId, versionId, verdict, JSON.stringify(findings), bundleHash, JSON.stringify(meta ?? {})],
   );
+  count(verdict === 'published' ? 'publish.ok' : 'publish.rejected', app.slug);
   return {
     verdict,
     attemptId: res.rows[0].id,
